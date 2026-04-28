@@ -188,11 +188,6 @@ const syncMyPositionsBeforeRun = Effect.gen(function* () {
   for (const [asset, previous] of prevRunMyPosMap.entries()) {
     if (!currentPosMap.has(asset)) {
       markSoldAsset(asset, now);
-      yield* logger.info('检测到手动清仓，后续跳过该资产: ', {
-        title: previous.title,
-        outcome: previous.outcome,
-        tokenId: asset,
-      });
     }
   }
 

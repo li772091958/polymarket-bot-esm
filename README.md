@@ -54,7 +54,13 @@ ecosystem.config.cjs        PM2 配置
 npm install
 ```
 
-2. 创建环境变量文件
+2. 准备第三方组件
+
+项目运行依赖 Redis。请先按官方文档在本机或服务器准备可连接的 Redis 服务：
+
+- Redis 安装与运行文档：https://redis.io/docs/latest/operate/oss_and_stack/install/install-redis/
+
+3. 创建环境变量文件
 
 ```bash
 cp .env.exmple .env
@@ -62,25 +68,25 @@ cp .env.exmple .env
 
 然后在 `.env` 中填入自己的私钥、funder 地址、CLOB API 凭证等配置。
 
-3. 开发模式运行
+4. 开发模式运行
 
 ```bash
 npm run dev
 ```
 
-4. 编译
+5. 编译
 
 ```bash
 npm run build
 ```
 
-5. 运行编译后的文件
+6. 运行编译后的文件
 
 ```bash
 npm start
 ```
 
-6. 使用 PM2 运行
+7. 使用 PM2 运行
 
 ```bash
 npm run build
@@ -202,7 +208,13 @@ ecosystem.config.cjs        PM2 configuration
 npm install
 ```
 
-2. Create your local environment file
+2. Prepare third-party services
+
+This project depends on Redis. Prepare a reachable Redis service locally or on your server by following the official documentation:
+
+- Redis installation and runtime docs: https://redis.io/docs/latest/operate/oss_and_stack/install/install-redis/
+
+3. Create your local environment file
 
 ```bash
 cp .env.exmple .env
@@ -210,25 +222,25 @@ cp .env.exmple .env
 
 Then fill `.env` with your private key, funder address, CLOB API credentials, and other required values.
 
-3. Run in development mode
+4. Run in development mode
 
 ```bash
 npm run dev
 ```
 
-4. Build
+5. Build
 
 ```bash
 npm run build
 ```
 
-5. Run the compiled output
+6. Run the compiled output
 
 ```bash
 npm start
 ```
 
-6. Run with PM2
+7. Run with PM2
 
 ```bash
 npm run build
