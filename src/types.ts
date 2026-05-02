@@ -148,6 +148,15 @@ export type PositionSearchParams = {
   mergeable?: boolean;
 };
 
+export type MarketPriceSearchParams = {
+  token_id: string;
+  side: 'BUY' | 'SELL';
+};
+
+export type MarketPrice = {
+  price: number;
+};
+
 export type Trade = {
   proxyWallet: string;
   side: 'BUY' | 'SELL';

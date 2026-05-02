@@ -6,7 +6,14 @@ import { Context, Data, Effect, Layer, Schedule } from 'effect';
 import RedisService from '../middleware/RedisService.js';
 import logger from '../middleware/logger.js';
 import axiosInstance from '../middleware/axios.js';
-import { Market, MarketSearchProps, Position, PositionSearchParams } from '../types.js';
+import {
+  Market,
+  MarketPrice,
+  MarketPriceSearchParams,
+  MarketSearchProps,
+  Position,
+  PositionSearchParams,
+} from '../types.js';
 
 const builderCode = process.env.POLY_BUILDER_CODE;
 
@@ -21,6 +28,7 @@ export const cbc = new ClobClient({
   },
   signatureType: 1,
   funderAddress: process.env.FUNDER,
+  throwOnError: true,
   ...(builderCode ? { builderConfig: { builderCode } } : {}),
 });
 
@@ -101,7 +109,10 @@ function buildHttpCacheKey(pathTemplate: string, pathParams: Record<string, any>
   return `httpcache:${cachePath}`;
 }
 
-function objToSearchString(obj: Record<string, unknown>, defaultProps: Record<string, unknown> = {}) {
+function objToSearchString(
+  obj: Record<string, unknown>,
+  defaultProps: Record<string, unknown> = {}
+) {
   return new URLSearchParams(
     Object.entries({
       ...defaultProps,
@@ -136,19 +147,10 @@ function retryPolicy() {
   );
 }
 
-function requestWithRetry<T>(
-  url: string
-): Effect.Effect<T, ApiError, HttpClient> {
+function requestWithRetry<T>(url: string): Effect.Effect<T, ApiError, HttpClient> {
   return HttpClient.pipe(
     Effect.flatMap(http =>
       http.get<T>(url).pipe(
-        Effect.tapError(error =>
-          logger.error('HTTP request failed', {
-            url,
-            status: error.status,
-            message: error.message,
-          })
-        ),
         Effect.retry(retryPolicy()),
         Effect.timeoutFail({
           duration: 10_000,
@@ -182,11 +184,14 @@ export function createDataApi<TParams = any, TResponse = any>({
   return (
     params: TParams = {} as TParams
   ): Effect.Effect<TResponse, ApiError, Redis | HttpClient | Config> =>
-    Effect.gen(function*() {
+    Effect.gen(function* () {
       const redis = yield* Redis;
       const config = yield* Config;
 
-      const { finalPath, pathParams, query } = yield* resolvePathEffect(path, params as Record<string, any>);
+      const { finalPath, pathParams, query } = yield* resolvePathEffect(
+        path,
+        params as Record<string, any>
+      );
       const search = objToSearchString(query);
       const key = buildHttpCacheKey(path, pathParams, search);
 
@@ -273,8 +278,16 @@ export const getPositionsEffect = createDataApi<PositionSearchParams, Position[]
   path: '/positions',
 });
 
+export const getMarketPriceEffect = createDataApi<MarketPriceSearchParams, MarketPrice>({
+  api: 'clob',
+  path: '/price',
+});
+
 export const getMarkets = (params: MarketSearchProps) =>
   getMarketsEffect(params).pipe(Effect.provide(DataApiLive));
 
 export const getPositions = (params: PositionSearchParams) =>
   getPositionsEffect(params).pipe(Effect.provide(DataApiLive));
+
+export const getMarketPrice = (params: MarketPriceSearchParams) =>
+  getMarketPriceEffect(params).pipe(Effect.provide(DataApiLive));
