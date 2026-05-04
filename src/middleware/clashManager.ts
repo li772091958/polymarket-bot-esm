@@ -1,5 +1,4 @@
 import axios, { type AxiosInstance } from 'axios';
-import { Effect } from 'effect';
 import logger from './logger.js';
 
 type ClashGroupResponse = {
@@ -27,7 +26,7 @@ type ClashConfig = {
   delayTimeoutMs: number;
 };
 
-const toError = (cause: unknown) => (cause instanceof Error ? cause : new Error(String(cause)));
+const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 const parsePositiveNumber = (value: string | undefined, fallback: number) => {
   const parsed = Number(value);
@@ -67,142 +66,112 @@ export class ClashManager {
     });
   }
 
-  private getProxies() {
-    return Effect.tryPromise({
-      try: async () => {
-        const res = await this.client.get<ClashGroupResponse>(
-          `/proxies/${encodeURIComponent(this.config.groupName)}`
-        );
+  private async getProxies() {
+    const res = await this.client.get<ClashGroupResponse>(
+      `/proxies/${encodeURIComponent(this.config.groupName)}`
+    );
 
-        return {
-          all: res.data.all || [],
-          now: res.data.now || '',
-        };
-      },
-      catch: toError,
+    return {
+      all: res.data.all || [],
+      now: res.data.now || '',
+    };
+  }
+
+  private async switchNode(nodeName: string) {
+    await this.client.put(`/proxies/${encodeURIComponent(this.config.groupName)}`, {
+      name: nodeName,
+    });
+    logger.info('切换 Clash 节点: ', {
+      group: this.config.groupName,
+      node: nodeName,
     });
   }
 
-  private switchNode(nodeName: string) {
-    return Effect.tryPromise({
-      try: () =>
-        this.client.put(`/proxies/${encodeURIComponent(this.config.groupName)}`, {
-          name: nodeName,
-        }),
-      catch: toError,
-    }).pipe(
-      Effect.zipRight(
-        logger.info('切换 Clash 节点: ', {
-          group: this.config.groupName,
-          node: nodeName,
-        })
-      ),
-      Effect.asVoid
-    );
-  }
-
-  private checkLatency(nodeName: string) {
-    return Effect.tryPromise({
-      try: async () => {
-        const res = await this.client.get<ClashDelayResponse>(
-          `/proxies/${encodeURIComponent(nodeName)}/delay`,
-          {
-            params: {
-              timeout: this.config.delayTimeoutMs,
-              url: this.config.delayTestUrl,
-            },
-          }
-        );
-
-        return Number(res.data.delay ?? Infinity);
-      },
-      catch: () => new Error('Clash node latency check failed'),
-    }).pipe(Effect.catchAll(() => Effect.succeed(Infinity)));
-  }
-
-  private findFastestNode(nodes: string[]) {
-    return Effect.gen(this, function* () {
-      let fastestNode = '';
-      let minDelay = Infinity;
-
-      for (const node of nodes.filter(item => item.includes(this.config.nodeKeyword))) {
-        const delay = yield* this.checkLatency(node);
-        if (delay < minDelay) {
-          minDelay = delay;
-          fastestNode = node;
+  private async checkLatency(nodeName: string) {
+    try {
+      const res = await this.client.get<ClashDelayResponse>(
+        `/proxies/${encodeURIComponent(nodeName)}/delay`,
+        {
+          params: {
+            timeout: this.config.delayTimeoutMs,
+            url: this.config.delayTestUrl,
+          },
         }
+      );
 
-        if (delay < this.config.targetDelayMs) break;
+      return Number(res.data.delay ?? Infinity);
+    } catch {
+      return Infinity;
+    }
+  }
+
+  private async findFastestNode(nodes: string[]) {
+    let fastestNode = '';
+    let minDelay = Infinity;
+
+    for (const node of nodes.filter(item => item.includes(this.config.nodeKeyword))) {
+      const delay = await this.checkLatency(node);
+      if (delay < minDelay) {
+        minDelay = delay;
+        fastestNode = node;
       }
 
-      return { fastestNode, minDelay };
-    });
+      if (delay < this.config.targetDelayMs) break;
+    }
+
+    return { fastestNode, minDelay };
   }
 
-  public update() {
-    return Effect.tryPromise({
-      try: () => this.client.put('/providers/proxies/default', {}),
-      catch: toError,
-    }).pipe(Effect.map(response => response.status));
+  public async update() {
+    const response = await this.client.put('/providers/proxies/default', {});
+    return response.status;
   }
 
-  public debugProviders() {
-    return Effect.tryPromise({
-      try: async () => {
-        const res = await this.client.get<ClashProvidersResponse>('/providers/proxies');
-        return res.data.providers || {};
-      },
-      catch: toError,
-    });
+  public async debugProviders() {
+    const res = await this.client.get<ClashProvidersResponse>('/providers/proxies');
+    return res.data.providers || {};
   }
 
-  public checkAndSwitchOnce() {
-    return Effect.gen(this, function* () {
-      const proxies = yield* this.getProxies();
+  public async checkAndSwitchOnce() {
+    try {
+      const proxies = await this.getProxies();
       if (!proxies.now || proxies.all.length === 0) return;
 
-      const currentDelay = yield* this.checkLatency(proxies.now);
+      const currentDelay = await this.checkLatency(proxies.now);
       if (currentDelay < this.config.healthyDelayMs) return;
 
-      const { fastestNode, minDelay } = yield* this.findFastestNode(proxies.all);
+      const { fastestNode, minDelay } = await this.findFastestNode(proxies.all);
       if (!fastestNode || !Number.isFinite(minDelay)) return;
 
-      yield* this.switchNode(fastestNode);
-    }).pipe(
-      Effect.catchAll(error =>
-        logger
-          .error('Clash 健康检查失败: ', {
-            message: error.message,
-            group: this.config.groupName,
-          })
-          .pipe(Effect.asVoid)
-      )
-    );
+      await this.switchNode(fastestNode);
+    } catch (error) {
+      logger.error('Clash 健康检查失败: ', {
+        message: error instanceof Error ? error.message : String(error),
+        group: this.config.groupName,
+      });
+    }
   }
 
-  public runLoop() {
-    return logger
-      .info('开启 Clash 代理健康检查', {
-        group: this.config.groupName,
-        keyword: this.config.nodeKeyword,
-        intervalMs: this.config.checkIntervalMs,
-      })
-      .pipe(
-        Effect.zipRight(
-          Effect.forever(
-            this.checkAndSwitchOnce().pipe(Effect.zipRight(Effect.sleep(this.config.checkIntervalMs)))
-          )
-        )
-      );
+  public async runLoop() {
+    logger.info('开启 Clash 代理健康检查', {
+      group: this.config.groupName,
+      keyword: this.config.nodeKeyword,
+      intervalMs: this.config.checkIntervalMs,
+    });
+
+    while (true) {
+      await this.checkAndSwitchOnce();
+      await sleep(this.config.checkIntervalMs);
+    }
   }
 }
 
-export const autoCheckAndSwitchProxyNode = Effect.gen(function* () {
+export const autoCheckAndSwitchProxyNode = async () => {
   const config = resolveConfig();
   if (!config) {
-    yield* logger.info('Clash 代理健康检查未启用');
+    logger.info('Clash 代理健康检查未启用');
     return;
   }
 
-  yield* new ClashManager(config).runLoop();
-});
+  await new ClashManager(config).runLoop();
+};

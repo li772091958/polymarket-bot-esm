@@ -1,4 +1,3 @@
-import { Effect } from 'effect';
 import axios, { AxiosInstance, AxiosRequestConfig } from 'axios';
 import 'dotenv/config';
 
@@ -30,12 +29,7 @@ const axiosInstance: AxiosInstance = axios.create(defaultConfig);
 //   }
 // );
 
-const toError = (cause: unknown) => (cause instanceof Error ? cause : new Error(String(cause)));
-
 export const axiosGet = <T = unknown>(url: string, config?: AxiosRequestConfig) =>
-  Effect.tryPromise({
-    try: () => axiosInstance.get<T>(url, config),
-    catch: toError,
-  });
+  axiosInstance.get<T>(url, config);
 
 export default axiosInstance;

@@ -30,7 +30,6 @@
     "@polymarket/clob-client-v2": "^1.0.0",
     "axios": "^1.13.2",
     "dotenv": "^17.2.3",
-    "effect": "^3.21.0",
     "redis": "^5.11.0",
     "ws": "^8.20.0"
   }

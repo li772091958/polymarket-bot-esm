@@ -1,4 +1,3 @@
-import { Effect } from 'effect';
 import { createClient, RedisClientType } from 'redis';
 
 export default class RedisService {
@@ -37,156 +36,83 @@ export default class RedisService {
   }
 
   private ensureConnected() {
-    return Effect.tryPromise({
-      try: () => this.connectPromise,
-      catch: cause => (cause instanceof Error ? cause : new Error(String(cause))),
-    });
+    return this.connectPromise;
   }
 
   // ================= String =================
 
-  public set(key: string, value: unknown, ttlSeconds?: number) {
-    return this.ensureConnected().pipe(
-      Effect.flatMap(client =>
-        Effect.tryPromise({
-          try: async () => {
-            const strValue = typeof value === 'string' ? value : JSON.stringify(value);
+  public async set(key: string, value: unknown, ttlSeconds?: number) {
+    const client = await this.ensureConnected();
+    const strValue = typeof value === 'string' ? value : JSON.stringify(value);
 
-            if (ttlSeconds) {
-              await client.set(key, strValue, {
-                EX: ttlSeconds,
-              });
-              return;
-            }
+    if (ttlSeconds) {
+      await client.set(key, strValue, {
+        EX: ttlSeconds,
+      });
+      return;
+    }
 
-            await client.set(key, strValue);
-          },
-          catch: cause => (cause instanceof Error ? cause : new Error(String(cause))),
-        })
-      )
-    );
+    await client.set(key, strValue);
   }
 
-  public get<T>(key: string) {
-    return this.ensureConnected().pipe(
-      Effect.flatMap(client =>
-        Effect.tryPromise({
-          try: async () => {
-            const data = await client.get(key);
-            if (!data) return null;
+  public async get<T>(key: string) {
+    const client = await this.ensureConnected();
+    const data = await client.get(key);
+    if (!data) return null;
 
-            try {
-              return JSON.parse(data) as T;
-            } catch {
-              return data as unknown as T;
-            }
-          },
-          catch: cause => (cause instanceof Error ? cause : new Error(String(cause))),
-        })
-      )
-    );
+    try {
+      return JSON.parse(data) as T;
+    } catch {
+      return data as unknown as T;
+    }
   }
 
-  public setIfNotExists(key: string, value: string, ttlSeconds: number) {
-    return this.ensureConnected().pipe(
-      Effect.flatMap(client =>
-        Effect.tryPromise({
-          try: async () => {
-            const result = await client.set(key, value, {
-              EX: ttlSeconds,
-              NX: true,
-            });
+  public async setIfNotExists(key: string, value: string, ttlSeconds: number) {
+    const client = await this.ensureConnected();
+    const result = await client.set(key, value, {
+      EX: ttlSeconds,
+      NX: true,
+    });
 
-            return result === 'OK';
-          },
-          catch: cause => (cause instanceof Error ? cause : new Error(String(cause))),
-        })
-      )
-    );
+    return result === 'OK';
   }
 
-  public del(key: string) {
-    return this.ensureConnected().pipe(
-      Effect.flatMap(client =>
-        Effect.tryPromise({
-          try: async () => {
-            await client.del(key);
-          },
-          catch: cause => (cause instanceof Error ? cause : new Error(String(cause))),
-        })
-      )
-    );
+  public async del(key: string) {
+    const client = await this.ensureConnected();
+    await client.del(key);
   }
 
   // ================= Set =================
 
-  public sadd(key: string, members: string | string[]) {
-    return this.ensureConnected().pipe(
-      Effect.flatMap(client =>
-        Effect.tryPromise({
-          try: async () => {
-            const args = Array.isArray(members) ? members : [members];
-            if (args.length === 0) return 0;
-            return await client.sAdd(key, args);
-          },
-          catch: cause => (cause instanceof Error ? cause : new Error(String(cause))),
-        })
-      )
-    );
+  public async sadd(key: string, members: string | string[]) {
+    const client = await this.ensureConnected();
+    const args = Array.isArray(members) ? members : [members];
+    if (args.length === 0) return 0;
+    return await client.sAdd(key, args);
   }
 
-  public smembers(key: string) {
-    return this.ensureConnected().pipe(
-      Effect.flatMap(client =>
-        Effect.tryPromise({
-          try: () => client.sMembers(key),
-          catch: cause => (cause instanceof Error ? cause : new Error(String(cause))),
-        })
-      )
-    );
+  public async smembers(key: string) {
+    const client = await this.ensureConnected();
+    return client.sMembers(key);
   }
 
-  public sismember(key: string, member: string) {
-    return this.ensureConnected().pipe(
-      Effect.flatMap(client =>
-        Effect.tryPromise({
-          try: async () => Boolean(await client.sIsMember(key, member)),
-          catch: cause => (cause instanceof Error ? cause : new Error(String(cause))),
-        })
-      )
-    );
+  public async sismember(key: string, member: string) {
+    const client = await this.ensureConnected();
+    return Boolean(await client.sIsMember(key, member));
   }
 
-  public srem(key: string, member: string) {
-    return this.ensureConnected().pipe(
-      Effect.flatMap(client =>
-        Effect.tryPromise({
-          try: () => client.sRem(key, member),
-          catch: cause => (cause instanceof Error ? cause : new Error(String(cause))),
-        })
-      )
-    );
+  public async srem(key: string, member: string) {
+    const client = await this.ensureConnected();
+    return client.sRem(key, member);
   }
 
-  public scard(key: string) {
-    return this.ensureConnected().pipe(
-      Effect.flatMap(client =>
-        Effect.tryPromise({
-          try: () => client.sCard(key),
-          catch: cause => (cause instanceof Error ? cause : new Error(String(cause))),
-        })
-      )
-    );
+  public async scard(key: string) {
+    const client = await this.ensureConnected();
+    return client.sCard(key);
   }
 
-  public expire(key: string, ttlSeconds: number) {
-    return this.ensureConnected().pipe(
-      Effect.flatMap(client =>
-        Effect.tryPromise({
-          try: async () => Boolean(await client.expire(key, ttlSeconds)),
-          catch: cause => (cause instanceof Error ? cause : new Error(String(cause))),
-        })
-      )
-    );
+  public async expire(key: string, ttlSeconds: number) {
+    const client = await this.ensureConnected();
+    return Boolean(await client.expire(key, ttlSeconds));
   }
 }

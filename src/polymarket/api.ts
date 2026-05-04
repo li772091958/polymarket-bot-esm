@@ -1,8 +1,6 @@
 import { ClobClient } from '@polymarket/clob-client-v2';
 import 'dotenv/config';
 import { Wallet } from '@ethersproject/wallet';
-import type { AxiosResponse } from 'axios';
-import { Context, Data, Effect, Layer, Schedule } from 'effect';
 import RedisService from '../middleware/RedisService.js';
 import logger from '../middleware/logger.js';
 import axiosInstance from '../middleware/axios.js';
@@ -32,34 +30,38 @@ export const cbc = new ClobClient({
   ...(builderCode ? { builderConfig: { builderCode } } : {}),
 });
 
-export class ApiError extends Data.TaggedError('ApiError')<{
-  readonly message: string;
+export class ApiError extends Error {
   readonly status?: number;
   readonly url?: string;
   readonly attempt?: number;
-}> {}
 
-type RedisServiceShape = {
-  get: <T>(key: string) => Effect.Effect<T | null, Error>;
-  set: (key: string, value: unknown, expireSeconds: number) => Effect.Effect<void, Error>;
-};
-
-type HttpClientShape = {
-  get: <T>(url: string) => Effect.Effect<AxiosResponse<T>, ApiError>;
-};
-
-type ConfigShape = {
-  baseUrl: (api: 'gamma-api' | 'data-api' | 'clob') => string;
-};
-
-export class Redis extends Context.Tag('Redis')<Redis, RedisServiceShape>() {}
-export class HttpClient extends Context.Tag('HttpClient')<HttpClient, HttpClientShape>() {}
-export class Config extends Context.Tag('Config')<Config, ConfigShape>() {}
+  constructor({
+    message,
+    status,
+    url,
+    attempt,
+  }: {
+    message: string;
+    status?: number;
+    url?: string;
+    attempt?: number;
+  }) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+    this.url = url;
+    this.attempt = attempt;
+  }
+}
 
 export interface DataApiProps {
   path: string;
   cacheExpired?: number;
   api: 'gamma-api' | 'data-api' | 'clob';
+}
+
+function sleep(ms: number) {
+  return new Promise(resolve => setTimeout(resolve, ms));
 }
 
 function resolvePath(path: string, params: Record<string, any>) {
@@ -129,51 +131,82 @@ function is502Error(error: { status?: number; message: string }) {
   return error.status === 502 || error.message.includes('502');
 }
 
-function resolvePathEffect(path: string, params: Record<string, any>) {
-  return Effect.try({
-    try: () => resolvePath(path, params),
-    catch: cause =>
-      new ApiError({
-        message: cause instanceof Error ? cause.message : String(cause),
-        url: path,
-      }),
+function getBaseUrl(api: 'gamma-api' | 'data-api' | 'clob') {
+  if (api === 'gamma-api') return 'https://gamma-api.polymarket.com';
+  if (api === 'data-api') return 'https://data-api.polymarket.com';
+  return process.env.CLOB_HOST || 'https://clob.polymarket.com';
+}
+
+async function withTimeout<T>(promise: Promise<T>, ms: number, url: string) {
+  let timer: NodeJS.Timeout | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(
+      () =>
+        reject(
+          new ApiError({
+            message: `HTTP request timed out after ${ms}ms`,
+            url,
+          })
+        ),
+      ms
+    );
   });
+
+  try {
+    return await Promise.race([promise, timeout]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
 }
 
-function retryPolicy() {
-  return Schedule.exponential('300 millis').pipe(
-    Schedule.intersect(Schedule.recurs(3)),
-    Schedule.whileInput((error: ApiError) => is502Error(error))
-  );
+async function requestOnce<T>(url: string) {
+  try {
+    const response = await withTimeout(axiosInstance.get<T>(url), 10_000, url);
+
+    if (response.status !== 200) {
+      throw new ApiError({
+        message: `Unexpected response status: ${response.status}`,
+        status: response.status,
+        url,
+      });
+    }
+
+    return response.data;
+  } catch (cause: any) {
+    if (cause instanceof ApiError) throw cause;
+
+    throw new ApiError({
+      message: cause?.message || 'HTTP request failed',
+      status: cause?.response?.status,
+      url,
+    });
+  }
 }
 
-function requestWithRetry<T>(url: string): Effect.Effect<T, ApiError, HttpClient> {
-  return HttpClient.pipe(
-    Effect.flatMap(http =>
-      http.get<T>(url).pipe(
-        Effect.retry(retryPolicy()),
-        Effect.timeoutFail({
-          duration: 10_000,
-          onTimeout: () =>
-            new ApiError({
-              message: 'HTTP request timed out after 10000ms',
-              url,
-            }),
-        }),
-        Effect.flatMap(response =>
-          response.status === 200
-            ? Effect.succeed(response.data)
-            : Effect.fail(
-                new ApiError({
-                  message: `Unexpected response status: ${response.status}`,
-                  status: response.status,
-                  url,
-                })
-              )
-        )
-      )
-    )
-  );
+async function requestWithRetry<T>(url: string) {
+  const maxRetries = 3;
+
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      return await requestOnce<T>(url);
+    } catch (error) {
+      if (
+        error instanceof ApiError &&
+        is502Error(error) &&
+        attempt < maxRetries
+      ) {
+        await sleep(300 * 2 ** attempt);
+        continue;
+      }
+
+      throw error;
+    }
+  }
+
+  throw new ApiError({
+    message: 'HTTP request failed after retries',
+    url,
+  });
 }
 
 export function createDataApi<TParams = any, TResponse = any>({
@@ -181,113 +214,68 @@ export function createDataApi<TParams = any, TResponse = any>({
   cacheExpired = 0,
   api = 'data-api',
 }: DataApiProps) {
-  return (
-    params: TParams = {} as TParams
-  ): Effect.Effect<TResponse, ApiError, Redis | HttpClient | Config> =>
-    Effect.gen(function* () {
-      const redis = yield* Redis;
-      const config = yield* Config;
+  return async (params: TParams = {} as TParams) => {
+    let resolvedPath: ReturnType<typeof resolvePath>;
+    try {
+      resolvedPath = resolvePath(path, params as Record<string, any>);
+    } catch (cause) {
+      throw new ApiError({
+        message: cause instanceof Error ? cause.message : String(cause),
+        url: path,
+      });
+    }
 
-      const { finalPath, pathParams, query } = yield* resolvePathEffect(
-        path,
-        params as Record<string, any>
-      );
-      const search = objToSearchString(query);
-      const key = buildHttpCacheKey(path, pathParams, search);
-
-      if (cacheExpired > 0) {
-        const cached = yield* redis.get<TResponse>(key).pipe(
-          Effect.tapError(error =>
-            logger.error('Failed to read cache', {
-              key,
-              message: error.message,
-            })
-          ),
-          Effect.catchAll(() => Effect.succeed(null))
-        );
-
-        if (cached !== null) {
-          yield* logger.info('Cache hit', { key });
-          return cached;
-        }
-      }
-
-      const baseUrl = config.baseUrl(api);
-      const url = search ? `${baseUrl}${finalPath}?${search}` : `${baseUrl}${finalPath}`;
-      const data = yield* requestWithRetry<TResponse>(url);
-
-      if (cacheExpired > 0) {
-        yield* redis.set(key, data, cacheExpired).pipe(
-          Effect.tapError(error =>
-            logger.error('Failed to write cache', {
-              key,
-              message: error.message,
-            })
-          ),
-          Effect.ignore
-        );
-      }
-
-      return data;
-    });
-}
-
-const RedisLive = Layer.effect(
-  Redis,
-  Effect.sync((): RedisServiceShape => {
+    const { finalPath, pathParams, query } = resolvedPath;
+    const search = objToSearchString(query);
+    const key = buildHttpCacheKey(path, pathParams, search);
     const redis = RedisService.getInstance();
 
-    return {
-      get: key => redis.get(key),
-      set: (key, value, expireSeconds) => redis.set(key, value, expireSeconds),
-    };
-  })
-);
+    if (cacheExpired > 0) {
+      try {
+        const cached = await redis.get<TResponse>(key);
+        if (cached !== null) {
+          logger.info('Cache hit', { key });
+          return cached;
+        }
+      } catch (error) {
+        logger.error('Failed to read cache', {
+          key,
+          message: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
 
-const HttpClientLive = Layer.succeed(HttpClient, {
-  get: <T>(url: string) =>
-    Effect.tryPromise({
-      try: () => axiosInstance.get<T>(url),
-      catch: (cause: any) =>
-        new ApiError({
-          message: cause?.message || 'HTTP request failed',
-          status: cause?.response?.status,
-          url,
-        }),
-    }),
-});
+    const baseUrl = getBaseUrl(api);
+    const url = search ? `${baseUrl}${finalPath}?${search}` : `${baseUrl}${finalPath}`;
+    const data = await requestWithRetry<TResponse>(url);
 
-const ConfigLive = Layer.succeed(Config, {
-  baseUrl: (api: 'gamma-api' | 'data-api' | 'clob') => {
-    if (api === 'gamma-api') return 'https://gamma-api.polymarket.com';
-    if (api === 'data-api') return 'https://data-api.polymarket.com';
-    return process.env.CLOB_HOST || 'https://clob.polymarket.com';
-  },
-});
+    if (cacheExpired > 0) {
+      try {
+        await redis.set(key, data, cacheExpired);
+      } catch (error) {
+        logger.error('Failed to write cache', {
+          key,
+          message: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
 
-export const DataApiLive = Layer.mergeAll(RedisLive, HttpClientLive, ConfigLive);
+    return data;
+  };
+}
 
-export const getMarketsEffect = createDataApi<MarketSearchProps, Market[]>({
+export const getMarkets = createDataApi<MarketSearchProps, Market[]>({
   api: 'gamma-api',
   path: '/markets',
   cacheExpired: 60,
 });
 
-export const getPositionsEffect = createDataApi<PositionSearchParams, Position[]>({
+export const getPositions = createDataApi<PositionSearchParams, Position[]>({
   api: 'data-api',
   path: '/positions',
 });
 
-export const getMarketPriceEffect = createDataApi<MarketPriceSearchParams, MarketPrice>({
+export const getMarketPrice = createDataApi<MarketPriceSearchParams, MarketPrice>({
   api: 'clob',
   path: '/price',
 });
-
-export const getMarkets = (params: MarketSearchProps) =>
-  getMarketsEffect(params).pipe(Effect.provide(DataApiLive));
-
-export const getPositions = (params: PositionSearchParams) =>
-  getPositionsEffect(params).pipe(Effect.provide(DataApiLive));
-
-export const getMarketPrice = (params: MarketPriceSearchParams) =>
-  getMarketPriceEffect(params).pipe(Effect.provide(DataApiLive));

@@ -6,7 +6,6 @@
  * @FilePath: /polymarket-bot-ts/utils/logger.ts
  *
  */
-import { Effect } from 'effect';
 import fs from 'fs';
 import path from 'path';
 
@@ -121,31 +120,29 @@ function formatLine(args: any[]) {
 }
 
 function createInfo(subDir: string = '') {
-  return (...args: any[]) =>
-    Effect.sync(() => {
-      const line = formatLine(args);
-      const dateStr = getDateStr();
-      const dir = path.join(process.cwd(), 'logs', subDir);
-      ensureDir(dir);
-      console.log('\x1B[36m%s\x1B[0m', line.replace('\n', ''));
-      const baseKey = `${dir}::out`;
-      const state = getStreamState(baseKey, dir, 'out', dateStr, Buffer.byteLength(line));
-      writeLine(state, line, Buffer.byteLength(line));
-    });
+  return (...args: any[]) => {
+    const line = formatLine(args);
+    const dateStr = getDateStr();
+    const dir = path.join(process.cwd(), 'logs', subDir);
+    ensureDir(dir);
+    console.log('\x1B[36m%s\x1B[0m', line.replace('\n', ''));
+    const baseKey = `${dir}::out`;
+    const state = getStreamState(baseKey, dir, 'out', dateStr, Buffer.byteLength(line));
+    writeLine(state, line, Buffer.byteLength(line));
+  };
 }
 
 const logger = {
   info: createInfo(),
-  error: (...args: any[]) =>
-    Effect.sync(() => {
-      const line = formatLine(args);
-      const dateStr = getDateStr();
-      const dir = path.join(process.cwd(), 'logs');
-      ensureDir(dir);
-      console.log('\x1b[91m%s\x1B[0m', line.replace('\n', ''));
-      const baseKey = `${dir}::error`;
-      const state = getStreamState(baseKey, dir, 'error', dateStr, Buffer.byteLength(line));
-      writeLine(state, line, Buffer.byteLength(line));
-    }),
+  error: (...args: any[]) => {
+    const line = formatLine(args);
+    const dateStr = getDateStr();
+    const dir = path.join(process.cwd(), 'logs');
+    ensureDir(dir);
+    console.log('\x1b[91m%s\x1B[0m', line.replace('\n', ''));
+    const baseKey = `${dir}::error`;
+    const state = getStreamState(baseKey, dir, 'error', dateStr, Buffer.byteLength(line));
+    writeLine(state, line, Buffer.byteLength(line));
+  },
 };
 export default logger;

@@ -1,71 +1,81 @@
 import { OrderType, Side, type TickSize } from '@polymarket/clob-client-v2';
-import { Effect } from 'effect';
 import { ApiError, cbc, getPositions } from './polymarket/api.js';
 import { redeemPosition } from './polymarket/relayer.js';
 import { Position } from './types.js';
 
-const LOOP_INTERVAL = '15 minutes';
+const LOOP_INTERVAL_MS = 15 * 60 * 1000;
 const CASHOUT_PRICE_THRESHOLD = 0.98;
 const CASHOUT_SELL_PRICE = 0.999;
 const MIN_CASHOUT_SELL_SIZE = 5;
 
-const redeem = (position: Position) =>
-  Effect.tryPromise({
-    try: () => redeemPosition(position),
-    catch: cause =>
-      new ApiError({
-        message: cause instanceof Error ? cause.message : String(cause),
-        url: `redeem:${position.conditionId}`,
-      }),
+const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+const toApiError = (cause: unknown, url: string) =>
+  new ApiError({
+    message: cause instanceof Error ? cause.message : String(cause),
+    url,
   });
 
-const postCashoutSellOrder = (position: Position) =>
-  Effect.tryPromise({
-    try: async () => {
-      const marketInfo = await cbc.getClobMarketInfo(position.conditionId);
+const redeem = async (position: Position) => {
+  try {
+    await redeemPosition(position);
+  } catch (cause) {
+    throw toApiError(cause, `redeem:${position.conditionId}`);
+  }
+};
 
-      return cbc.createAndPostOrder(
-        {
-          tokenID: position.asset,
-          side: Side.SELL,
-          price: CASHOUT_SELL_PRICE,
-          size: position.size,
-        },
-        {
-          tickSize: String(marketInfo.mts) as TickSize,
-          negRisk: position.negativeRisk,
-        },
-        OrderType.GTC
-      );
-    },
-    catch: cause =>
-      new ApiError({
-        message: cause instanceof Error ? cause.message : String(cause),
-        url: `cashout-sell:${position.asset}`,
-      }),
-  });
+const postCashoutSellOrder = async (position: Position) => {
+  try {
+    const marketInfo = await cbc.getClobMarketInfo(position.conditionId);
 
-const processPosition = (position: Position) =>
-  Effect.gen(function* () {
+    return await cbc.createAndPostOrder(
+      {
+        tokenID: position.asset,
+        side: Side.SELL,
+        price: CASHOUT_SELL_PRICE,
+        size: position.size,
+      },
+      {
+        tickSize: String(marketInfo.mts) as TickSize,
+        negRisk: position.negativeRisk,
+      },
+      OrderType.GTC
+    );
+  } catch (cause) {
+    throw toApiError(cause, `cashout-sell:${position.asset}`);
+  }
+};
+
+const processPosition = async (position: Position) => {
+  try {
     if (position.redeemable) {
-      yield* redeem(position);
+      await redeem(position);
       return;
     }
 
     if (position.size >= MIN_CASHOUT_SELL_SIZE && position.curPrice > CASHOUT_PRICE_THRESHOLD) {
-      yield* postCashoutSellOrder(position);
+      await postCashoutSellOrder(position);
     }
-  }).pipe(Effect.catchTag('ApiError', () => Effect.void));
+  } catch (error) {
+    if (!(error instanceof ApiError)) throw error;
+  }
+};
 
-export const runCashoutCycle = Effect.gen(function* () {
-  const positions = yield* getPositions({ user: process.env.FUNDER });
+export const runCashoutCycle = async () => {
+  try {
+    const positions = await getPositions({ user: process.env.FUNDER });
 
-  yield* Effect.forEach(positions, processPosition, {
-    concurrency: 1,
-    discard: true,
-  });
-}).pipe(Effect.catchTag('ApiError', () => Effect.void));
+    for (const position of positions) {
+      await processPosition(position);
+    }
+  } catch (error) {
+    if (!(error instanceof ApiError)) throw error;
+  }
+};
 
-export const runCashoutLoop = Effect.forever(
-  runCashoutCycle.pipe(Effect.zipRight(Effect.sleep(LOOP_INTERVAL)))
-);
+export const runCashoutLoop = async () => {
+  while (true) {
+    await runCashoutCycle();
+    await sleep(LOOP_INTERVAL_MS);
+  }
+};

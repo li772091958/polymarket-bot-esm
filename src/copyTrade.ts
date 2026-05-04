@@ -1,5 +1,4 @@
 import { OrderType, Side, type TickSize } from '@polymarket/clob-client-v2';
-import { Effect } from 'effect';
 import logger from './middleware/logger.js';
 import notify, { simpleObjectToMarkdown } from './middleware/notify.js';
 import { ApiError, cbc, getMarketPrice, getPositions } from './polymarket/api.js';
@@ -29,8 +28,8 @@ interface CopyStrategyNameCache {
   createdAt: number;
 }
 
-// 跟单轮询间隔，Effect.sleep 支持 human-readable duration。
-const LOOP_INTERVAL = '1 minute';
+// 跟单轮询间隔。
+const LOOP_INTERVAL_MS = 60 * 1000;
 // 市价买单允许多付的滑点，实际挂单价 = 当前价 + 该滑点，上限仍会被限制。
 const DEFAULT_MARKET_ORDER_SLIPPAGE = 0.03;
 // 全局模拟交易开关，开启后只打日志，不真实下单。
@@ -57,6 +56,8 @@ const confirmedBoughtValueMap = new Map<string, number>();
 const copyStrategyNameByAssetMap = new Map<string, CopyStrategyNameCache>();
 const cacheTradedOrderIdSet = new Set<string>();
 let copyTradeWsStarted = false;
+
+const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 const DEFAULT_STRATEGY_FILTER = (positions: Position[]) =>
   positions.filter(
@@ -169,81 +170,79 @@ const pruneTradeOrderCache = () => {
   if (latestOrderId) cacheTradedOrderIdSet.add(latestOrderId);
 };
 
-const fetchMarketBuyPrice = (position: Position) =>
-  getMarketPrice({
+const fetchMarketBuyPrice = async (position: Position) => {
+  const { price } = await getMarketPrice({
     token_id: position.asset,
     side: 'BUY',
-  }).pipe(
-    Effect.flatMap(({ price }) => {
-      const marketPrice = Number(price);
+  });
+  const marketPrice = Number(price);
 
-      return Number.isFinite(marketPrice)
-        ? Effect.succeed(marketPrice)
-        : Effect.fail(
-            new ApiError({
-              message: `Invalid market price: ${String(price)}`,
-              url: `market-price:${position.asset}`,
-            })
-          );
-    })
+  if (Number.isFinite(marketPrice)) return marketPrice;
+
+  throw new ApiError({
+    message: `Invalid market price: ${String(price)}`,
+    url: `market-price:${position.asset}`,
+  });
+};
+
+const shouldBuyAtMarketPrice = async (position: Position) => {
+  const marketPrice = await fetchMarketBuyPrice(position);
+  return (
+    marketPrice >= MIN_ALLOWED_MARKET_BUY_PRICE &&
+    marketPrice <= MAX_ALLOWED_MARKET_BUY_PRICE
   );
+};
 
-const shouldBuyAtMarketPrice = (position: Position) =>
-  fetchMarketBuyPrice(position).pipe(
-    Effect.map(
-      marketPrice =>
-        marketPrice >= MIN_ALLOWED_MARKET_BUY_PRICE && marketPrice <= MAX_ALLOWED_MARKET_BUY_PRICE
-    )
-  );
+const postMarketBuyOrder = async (strategy: StrategyConfig, position: Position, amount: number) => {
+  if (DRY_RUN || strategy.dryRun) {
+    logger.info(`${getStrategyName(strategy)} 模拟买进: `, {
+      strategy: getStrategyName(strategy),
+      title: position.title,
+      outcome: position.outcome,
+      tokenId: position.asset,
+      amount,
+    });
+    return;
+  }
 
-const postMarketBuyOrder = (strategy: StrategyConfig, position: Position, amount: number) =>
-  DRY_RUN || strategy.dryRun
-    ? logger.info(`${getStrategyName(strategy)} 模拟买进: `, {
-        strategy: getStrategyName(strategy),
-        title: position.title,
-        outcome: position.outcome,
-        tokenId: position.asset,
-        amount,
-      })
-    : Effect.tryPromise({
-        try: async () => {
-          const marketInfo = await cbc.getClobMarketInfo(position.conditionId);
-          const order = {
-            tokenID: position.asset,
-            side: Side.BUY,
-            amount,
-            price: resolveWorstPrice(position),
-            userUSDCBalance: amount,
-          };
+  try {
+    const marketInfo = await cbc.getClobMarketInfo(position.conditionId);
+    const order = {
+      tokenID: position.asset,
+      side: Side.BUY,
+      amount,
+      price: resolveWorstPrice(position),
+      userUSDCBalance: amount,
+    };
 
-          return cbc.createAndPostMarketOrder(
-            order,
-            {
-              tickSize: String(marketInfo.mts) as TickSize,
-              negRisk: position.negativeRisk,
-            },
-            OrderType.FOK
-          );
-        },
-        catch: cause =>
-          new ApiError({
-            message: cause instanceof Error ? cause.message : String(cause),
-            url: `market-order:${position.asset}`,
-          }),
-      });
+    return await cbc.createAndPostMarketOrder(
+      order,
+      {
+        tickSize: String(marketInfo.mts) as TickSize,
+        negRisk: position.negativeRisk,
+      },
+      OrderType.FOK
+    );
+  } catch (cause) {
+    throw new ApiError({
+      message: cause instanceof Error ? cause.message : String(cause),
+      url: `market-order:${position.asset}`,
+    });
+  }
+};
 
-const syncMyPositionsBeforeRun = Effect.gen(function* () {
+const syncMyPositionsBeforeRun = async () => {
   const now = Date.now();
   pruneSoldAssets(now);
 
-  const positions = yield* getPositions({
+  const positions = await getPositions({
     user: process.env.FUNDER,
     limit: 500,
   });
   const currentPosMap = new Map(positions.map(position => [position.asset, position]));
   const currentAssets = new Set(currentPosMap.keys());
 
-  for (const [asset, previous] of prevRunMyPosMap.entries()) {
+  for (const [asset] of prevRunMyPosMap.entries()) {
     if (!currentPosMap.has(asset)) {
       markSoldAsset(asset, now);
     }
@@ -257,7 +256,7 @@ const syncMyPositionsBeforeRun = Effect.gen(function* () {
   }
 
   return positions;
-});
+};
 
 const resolveRemainingAmount = (strategy: StrategyConfig, position: Position) => {
   const configuredAmount = resolveOrderAmount(strategy, position);
@@ -279,54 +278,54 @@ const resolveRemainingAmount = (strategy: StrategyConfig, position: Position) =>
   return Math.max(0, remainingAmount);
 };
 
-const processPosition = (strategy: StrategyConfig, position: Position) =>
-  Effect.gen(function* () {
-    if (hasSoldAsset(position.asset)) return;
-    const configuredAmount = resolveOrderAmount(strategy, position);
-    if (configuredAmount <= 0) return;
+const processPosition = async (strategy: StrategyConfig, position: Position) => {
+  if (hasSoldAsset(position.asset)) return;
+  const configuredAmount = resolveOrderAmount(strategy, position);
+  if (configuredAmount <= 0) return;
 
-    const remainingAmount = resolveRemainingAmount(strategy, position);
+  const remainingAmount = resolveRemainingAmount(strategy, position);
 
-    if (remainingAmount < MIN_MARKET_BUY_AMOUNT) return;
+  if (remainingAmount < MIN_MARKET_BUY_AMOUNT) return;
 
-    const shouldBuy = yield* shouldBuyAtMarketPrice(position);
-    if (!shouldBuy) return;
+  const shouldBuy = await shouldBuyAtMarketPrice(position);
+  if (!shouldBuy) return;
 
-    rememberCopyStrategyName(position.asset, strategy);
-    yield* postMarketBuyOrder(strategy, position, remainingAmount);
-  });
+  rememberCopyStrategyName(position.asset, strategy);
+  await postMarketBuyOrder(strategy, position, remainingAmount);
+};
 
-const runStrategy = (strategy: StrategyConfig) =>
-  Effect.gen(function* () {
-    if (!strategy.enable) {
-      return;
-    }
+const runStrategy = async (strategy: StrategyConfig) => {
+  if (!strategy.enable) return;
 
-    const allPositions = yield* getPositions({
+  try {
+    const allPositions = await getPositions({
       user: strategy.address,
       limit: 500,
     });
     const targetPositions = resolvePositionFilter(strategy)(allPositions);
 
     for (const position of targetPositions) {
-      yield* processPosition(strategy, position).pipe(
-        Effect.catchTag('ApiError', error =>
-          logger
-            .error('Copy-trade order failed', {
-              strategy: getStrategyName(strategy),
-              title: position.title,
-              outcome: position.outcome,
-              message: error.message,
-              status: error.status,
-              url: error.url,
-            })
-            .pipe(Effect.asVoid)
-        )
-      );
-    }
-  }).pipe(Effect.catchTag('ApiError', () => Effect.void));
+      try {
+        await processPosition(strategy, position);
+      } catch (error) {
+        if (!(error instanceof ApiError)) throw error;
 
-const startCopyTradeWsListener = Effect.sync(() => {
+        logger.error('Copy-trade order failed', {
+          strategy: getStrategyName(strategy),
+          title: position.title,
+          outcome: position.outcome,
+          message: error.message,
+          status: error.status,
+          url: error.url,
+        });
+      }
+    }
+  } catch (error) {
+    if (!(error instanceof ApiError)) throw error;
+  }
+};
+
+const startCopyTradeWsListener = () => {
   if (copyTradeWsStarted) return;
   copyTradeWsStarted = true;
 
@@ -356,24 +355,19 @@ const startCopyTradeWsListener = Effect.sync(() => {
         cacheTradedOrderIdSet.add(trade.order_id);
         pruneTradeOrderCache();
 
-        void Effect.runPromise(
-          logger.info(`${nickname} ${type}:`, trade).pipe(
-            Effect.zipRight(
-              notify(title, desp).pipe(
-                Effect.catchAll(error =>
-                  logger
-                    .error('消息推送失败: ', {
-                      type,
-                      orderId: trade.order_id,
-                      assetId: trade.asset_id,
-                      message: error.message,
-                    })
-                    .pipe(Effect.asVoid)
-                )
-              )
-            )
-          )
-        );
+        void (async () => {
+          logger.info(`${nickname} ${type}:`, trade);
+          try {
+            await notify(title, desp);
+          } catch (error) {
+            logger.error('消息推送失败: ', {
+              type,
+              orderId: trade.order_id,
+              assetId: trade.asset_id,
+              message: error instanceof Error ? error.message : String(error),
+            });
+          }
+        })();
       }
 
       if (trade.side === 'SELL') {
@@ -394,24 +388,29 @@ const startCopyTradeWsListener = Effect.sync(() => {
 
   wsUser.on('ws_error', error => {
     const message = error instanceof Error ? error.message : String(error);
-    void Effect.runPromise(logger.error('WS user channel error: ', { message }));
+    logger.error('WS user channel error: ', { message });
   });
 
   wsUser.run();
-});
+};
 
-export const runCopyTradeCycle = syncMyPositionsBeforeRun.pipe(
-  Effect.zipRight(
-    Effect.forEach(STRATEGY, runStrategy, {
-      concurrency: 1,
-      discard: true,
-    })
-  ),
-  Effect.catchTag('ApiError', () => Effect.void)
-);
+export const runCopyTradeCycle = async () => {
+  try {
+    await syncMyPositionsBeforeRun();
 
-export const runCopyTradeLoop = startCopyTradeWsListener.pipe(
-  Effect.zipRight(
-    Effect.forever(runCopyTradeCycle.pipe(Effect.zipRight(Effect.sleep(LOOP_INTERVAL))))
-  )
-);
+    for (const strategy of STRATEGY) {
+      await runStrategy(strategy);
+    }
+  } catch (error) {
+    if (!(error instanceof ApiError)) throw error;
+  }
+};
+
+export const runCopyTradeLoop = async () => {
+  startCopyTradeWsListener();
+
+  while (true) {
+    await runCopyTradeCycle();
+    await sleep(LOOP_INTERVAL_MS);
+  }
+};
