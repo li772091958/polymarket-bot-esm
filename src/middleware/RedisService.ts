@@ -36,6 +36,23 @@ export default class RedisService {
     return RedisService.instance;
   }
 
+  public static async closeInstance() {
+    if (!RedisService.instance) return;
+    await RedisService.instance.close();
+  }
+
+  private async close() {
+    try {
+      await this.connectPromise;
+    } catch {
+      // The connection may have failed during startup; still release the client below.
+    }
+
+    if (this.client.isOpen) {
+      await this.client.quit();
+    }
+  }
+
   private ensureConnected() {
     return Effect.tryPromise({
       try: () => this.connectPromise,

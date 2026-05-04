@@ -148,4 +148,18 @@ const logger = {
       writeLine(state, line, Buffer.byteLength(line));
     }),
 };
+
+export function closeLogger() {
+  const closing = Array.from(streams.values(), state => {
+    if (state.stream.closed || state.stream.destroyed) return Promise.resolve();
+
+    return new Promise<void>(resolve => {
+      state.stream.end(resolve);
+    });
+  });
+
+  streams.clear();
+  return Promise.all(closing).then(() => undefined);
+}
+
 export default logger;

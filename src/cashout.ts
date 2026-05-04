@@ -9,7 +9,7 @@ const LOOP_INTERVAL = '15 minutes';
 const CASHOUT_PRICE_THRESHOLD = 0.98;
 const CASHOUT_SELL_PRICE = 0.999;
 const MIN_CASHOUT_SELL_SIZE = 5;
-const MIN_REDEEM_CURRENT_VALUE = 0.01;
+const MIN_REDEEM_CURRENT_VALUE = -0.01;
 const REDEEM_FAILURE_RETENTION_MS = 6 * 60 * 60 * 1000;
 
 const redeemFailureMap = new Map<string, number>();
