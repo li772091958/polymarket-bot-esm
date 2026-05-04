@@ -37,8 +37,8 @@ const DEFAULT_MARKET_ORDER_SLIPPAGE = 0.03;
 const DRY_RUN = ['1', 'true', 'yes', 'on'].includes((process.env.DRY_RUN || '').toLowerCase());
 // 小于该金额的剩余额度不再发起买入。
 const MIN_MARKET_BUY_AMOUNT = 1;
-// Polymarket 市价买单实际下单的最低金额，略高于 1 避免边界失败。
-const MIN_MARKET_BUY_ORDER_AMOUNT = 1.02;
+// Polymarket 市价买单实际下单的最低金额，留出精度/价格取整缓冲避免被折成 $0.99。
+const MIN_MARKET_BUY_ORDER_AMOUNT = 1.1;
 // 剩余额度超过该值但不足最低买入额时，向上补到最低下单金额。
 const MIN_MARKET_BUY_ROUND_UP_AMOUNT = 0.6;
 // 低于该价格的仓位不跟，避免低流动性/极端赔率标的。

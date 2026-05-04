@@ -9,6 +9,7 @@
     "start": "node dist/index.js",
     "test": "tsx src/test.ts",
     "gen": "tsx src/bin/index.ts",
+    "cashout": "tsx src/bin/cashout.ts",
     "check:secrets": "node scripts/check-secrets.mjs",
     "install:hooks": "node scripts/install-hooks.mjs"
   },
