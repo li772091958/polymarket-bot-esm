@@ -2,14 +2,18 @@ import { createWalletClient, encodeFunctionData, Hex, http, parseUnits, zeroHash
 import { privateKeyToAccount } from 'viem/accounts';
 import { polygon } from 'viem/chains';
 import { BuilderConfig } from '@polymarket/builder-signing-sdk';
-import { RelayClient, RelayerTxType, type Transaction } from '@polymarket/builder-relayer-client';
+import {
+  RelayClient,
+  RelayerTransactionState,
+  RelayerTxType,
+  type Transaction,
+} from '@polymarket/builder-relayer-client';
 import 'dotenv/config';
 
 import { Position } from '../types.js';
 import {
   CTF_COLLATERAL_ADAPTER_ADDRESS,
   NEG_RISK_CTF_COLLATERAL_ADAPTER_ADDRESS,
-  NEG_RISK_ADAPTER_ADDRESS,
   POLYMARKET_USD,
 } from './constants.js';
 
@@ -59,19 +63,6 @@ const ctfRedeemAbi = [
   },
 ] as const;
 
-const negRiskRedeemAbi = [
-  {
-    inputs: [
-      { internalType: 'bytes32', name: '_conditionId', type: 'bytes32' },
-      { internalType: 'uint256[]', name: '_amounts', type: 'uint256[]' },
-    ],
-    name: 'redeemPositions',
-    outputs: [],
-    stateMutability: 'nonpayable',
-    type: 'function',
-  },
-] as const;
-
 export type SplitMergeParams = {
   conditionId: Hex;
   amount: number | string | bigint;
@@ -109,7 +100,38 @@ const createRelayerClient = () => {
 const executeRelayerTransaction = async (tx: Transaction, description: string) => {
   const client = createRelayerClient();
   const response = await client.execute([tx], description);
-  return await response.wait();
+  const result = await response.wait();
+
+  if (!result) {
+    const [latest] = await response.getTransaction().catch(() => []);
+    const state = latest?.state || 'UNKNOWN';
+    const transactionHash = latest?.transactionHash || response.transactionHash || '';
+
+    throw new Error(
+      [
+        `Relayer transaction did not complete successfully: ${description}`,
+        `transactionID=${response.transactionID}`,
+        `state=${state}`,
+        `transactionHash=${transactionHash || 'N/A'}`,
+      ].join(', ')
+    );
+  }
+
+  if (
+    result.state === RelayerTransactionState.STATE_FAILED ||
+    result.state === RelayerTransactionState.STATE_INVALID
+  ) {
+    throw new Error(
+      [
+        `Relayer transaction failed: ${description}`,
+        `transactionID=${result.transactionID}`,
+        `state=${result.state}`,
+        `transactionHash=${result.transactionHash || 'N/A'}`,
+      ].join(', ')
+    );
+  }
+
+  return result;
 };
 
 const createSplitMergeTransaction = (
@@ -159,14 +181,17 @@ export async function redeemPosition(position: Position) {
   if (!position.redeemable) return;
 
   if (position.negativeRisk) {
-    const amounts = [0n, 0n];
-    amounts[position.outcomeIndex] = parseUnits(position.size.toString(), 6);
     const redeemTx = {
-      to: NEG_RISK_ADAPTER_ADDRESS,
+      to: NEG_RISK_CTF_COLLATERAL_ADAPTER_ADDRESS,
       data: encodeFunctionData({
-        abi: negRiskRedeemAbi,
+        abi: ctfRedeemAbi,
         functionName: 'redeemPositions',
-        args: [position.conditionId as Hex, amounts],
+        args: [
+          POLYMARKET_USD,
+          zeroHash,
+          position.conditionId as Hex,
+          BINARY_MARKET_PARTITION,
+        ],
       }),
       value: '0',
     };

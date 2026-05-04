@@ -87,7 +87,7 @@ const processPosition = (position: Position) =>
         return;
       }
 
-      yield* redeem(position);
+      const transaction = yield* redeem(position);
       yield* logger.info('Redeem success: ', {
         title: position.title,
         outcome: position.outcome,
@@ -95,6 +95,9 @@ const processPosition = (position: Position) =>
         outcomeIndex: position.outcomeIndex,
         size: position.size,
         currentValue: position.currentValue,
+        transactionHash: transaction?.transactionHash,
+        transactionID: transaction?.transactionID,
+        state: transaction?.state,
       });
       return;
     }
