@@ -49,6 +49,10 @@ const MAX_ALLOWED_MARKET_BUY_PRICE = 0.92;
 const SOLD_ASSET_RETENTION_MS = 2 * 24 * 60 * 60 * 1000;
 // 已记录策略名但尚未同步成持仓的缓存保留时间，防止缓存无界增长。
 const PENDING_COPY_STRATEGY_RETENTION_MS = 30 * 60 * 1000;
+// 临时排除已结算/已赎回但目标钱包仍显示持仓的 token，避免反复尝试无效买入。
+const EXCLUDED_COPY_BUY_ASSETS = new Set([
+  '50874144013607039471889595967151844694106457173650258171240313664286862843480',
+]);
 
 let myPosMap = new Map<string, Position>();
 let prevRunMyPosMap = new Map<string, Position>();
@@ -87,7 +91,11 @@ const STRATEGY: StrategyConfig[] = [
     enable: true,
     address: '0x9b1e0334569aa1768a07705a859686aad58e82c9',
     nickname: 'FullPicks1',
-    amount: 1,
+    amount: (pos: Position) => {
+      let result = parseFloat((pos.initialValue / 4000).toFixed(2));
+      result = Math.min(10, Math.max(1, result));
+      return result;
+    },
   },
 ];
 
@@ -150,6 +158,8 @@ const hasSoldAsset = (asset: string, now = Date.now()) => {
 
   return true;
 };
+
+const isExcludedCopyBuyAsset = (asset: string) => EXCLUDED_COPY_BUY_ASSETS.has(asset);
 
 const parseFiniteNumber = (value: string | number) => {
   const num = Number(value);
@@ -282,6 +292,8 @@ const resolveRemainingAmount = (strategy: StrategyConfig, position: Position) =>
 const processPosition = (strategy: StrategyConfig, position: Position) =>
   Effect.gen(function* () {
     if (hasSoldAsset(position.asset)) return;
+    if (isExcludedCopyBuyAsset(position.asset)) return;
+
     const configuredAmount = resolveOrderAmount(strategy, position);
     if (configuredAmount <= 0) return;
 
@@ -296,6 +308,23 @@ const processPosition = (strategy: StrategyConfig, position: Position) =>
     yield* postMarketBuyOrder(strategy, position, remainingAmount);
   });
 
+const processPositionSafely = (strategy: StrategyConfig, position: Position) =>
+  processPosition(strategy, position).pipe(
+    Effect.catchTag('ApiError', error =>
+      logger
+        .error('Copy-trade order failed', {
+          strategy: getStrategyName(strategy),
+          title: position.title,
+          outcome: position.outcome,
+          tokenId: position.asset,
+          message: error.message,
+          status: error.status,
+          url: error.url,
+        })
+        .pipe(Effect.asVoid)
+    )
+  );
+
 const runStrategy = (strategy: StrategyConfig) =>
   Effect.gen(function* () {
     if (!strategy.enable) {
@@ -309,20 +338,7 @@ const runStrategy = (strategy: StrategyConfig) =>
     const targetPositions = resolvePositionFilter(strategy)(allPositions);
 
     for (const position of targetPositions) {
-      yield* processPosition(strategy, position).pipe(
-        Effect.catchTag('ApiError', error =>
-          logger
-            .error('Copy-trade order failed', {
-              strategy: getStrategyName(strategy),
-              title: position.title,
-              outcome: position.outcome,
-              message: error.message,
-              status: error.status,
-              url: error.url,
-            })
-            .pipe(Effect.asVoid)
-        )
-      );
+      yield* processPositionSafely(strategy, position);
     }
   }).pipe(Effect.catchTag('ApiError', () => Effect.void));
 
