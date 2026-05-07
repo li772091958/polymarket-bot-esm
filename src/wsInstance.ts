@@ -124,6 +124,7 @@ export class WebSocketOrderBook extends EventEmitter {
   private readonly maxReconnectAttempts = 100;
   private readonly baseReconnectDelay = 1000;
   private readonly maxReconnectDelay = 10000;
+  private readonly reconnectCooldownDelay = 15 * 60 * 1000;
   private isIntentionalClose = false;
   private isRunning = false;
 
@@ -217,6 +218,7 @@ export class WebSocketOrderBook extends EventEmitter {
   private onClose() {
     this.stopPing();
     this.ws = null;
+    this.emit('disconnected');
     if (!this.isIntentionalClose) this.scheduleReconnect();
   }
 
@@ -259,12 +261,30 @@ export class WebSocketOrderBook extends EventEmitter {
   }
 
   private scheduleReconnect() {
-    if (!this.isRunning || this.reconnectAttempts >= this.maxReconnectAttempts) return;
+    if (!this.isRunning) return;
+
+    if (this.reconnectAttempts >= this.maxReconnectAttempts) {
+      this.emit('reconnect_cooldown', {
+        attempts: this.reconnectAttempts,
+        delay: this.reconnectCooldownDelay,
+      });
+
+      this.reconnectTimer = setTimeout(() => {
+        this.reconnectAttempts = 0;
+        this.connect();
+      }, this.reconnectCooldownDelay);
+      return;
+    }
 
     const delay = Math.min(
       this.baseReconnectDelay * 2 ** this.reconnectAttempts,
       this.maxReconnectDelay
     );
+
+    this.emit('reconnecting', {
+      attempt: this.reconnectAttempts + 1,
+      delay,
+    });
 
     this.reconnectTimer = setTimeout(() => {
       this.reconnectAttempts++;

@@ -413,6 +413,22 @@ const startCopyTradeWsListener = Effect.sync(() => {
     void Effect.runPromise(logger.error('WS user channel error: ', { message }));
   });
 
+  wsUser.on('connected', () => {
+    void Effect.runPromise(logger.info('WS user channel connected'));
+  });
+
+  wsUser.on('disconnected', () => {
+    void Effect.runPromise(logger.error('WS user channel disconnected'));
+  });
+
+  wsUser.on('reconnecting', info => {
+    void Effect.runPromise(logger.info('WS user channel reconnecting: ', info));
+  });
+
+  wsUser.on('reconnect_cooldown', info => {
+    void Effect.runPromise(logger.error('WS user channel reconnect cooldown: ', info));
+  });
+
   wsUser.run();
 });
 
