@@ -12,12 +12,39 @@ import 'dotenv/config';
 
 import { Position } from '../types.js';
 import {
+  CTF_CONDITIONAL_TOKENS_ADDRESS,
   CTF_COLLATERAL_ADAPTER_ADDRESS,
   NEG_RISK_CTF_COLLATERAL_ADAPTER_ADDRESS,
   POLYMARKET_USD,
 } from './constants.js';
 
 const BINARY_MARKET_PARTITION = [1n, 2n];
+
+const erc20Abi = [
+  {
+    name: 'approve',
+    type: 'function',
+    inputs: [
+      { name: 'spender', type: 'address' },
+      { name: 'amount', type: 'uint256' },
+    ],
+    outputs: [{ name: '', type: 'bool' }],
+    stateMutability: 'nonpayable',
+  },
+] as const;
+
+const erc1155Abi = [
+  {
+    name: 'setApprovalForAll',
+    type: 'function',
+    inputs: [
+      { name: 'operator', type: 'address' },
+      { name: 'approved', type: 'bool' },
+    ],
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+] as const;
 
 const ctfSplitMergeAbi = [
   {
@@ -97,9 +124,9 @@ const createRelayerClient = () => {
   );
 };
 
-const executeRelayerTransaction = async (tx: Transaction, description: string) => {
+const executeRelayerTransactions = async (txs: Transaction[], description: string) => {
   const client = createRelayerClient();
-  const response = await client.execute([tx], description);
+  const response = await client.execute(txs, description);
   const result = await response.wait();
 
   if (!result) {
@@ -134,6 +161,9 @@ const executeRelayerTransaction = async (tx: Transaction, description: string) =
   return result;
 };
 
+const executeRelayerTransaction = async (tx: Transaction, description: string) =>
+  executeRelayerTransactions([tx], description);
+
 const createSplitMergeTransaction = (
   functionName: 'splitPosition' | 'mergePositions',
   {
@@ -163,16 +193,50 @@ const createSplitMergeTransaction = (
   };
 };
 
+const createCollateralApprovalTransaction = (
+  spender: Hex,
+  amount: SplitMergeParams['amount']
+): Transaction => ({
+  to: POLYMARKET_USD,
+  data: encodeFunctionData({
+    abi: erc20Abi,
+    functionName: 'approve',
+    args: [spender, parseCollateralAmount(amount)],
+  }),
+  value: '0',
+});
+
+const resolveCollateralAdapterAddress = (negativeRisk = false) =>
+  (negativeRisk
+    ? NEG_RISK_CTF_COLLATERAL_ADAPTER_ADDRESS
+    : CTF_COLLATERAL_ADAPTER_ADDRESS) as Hex;
+
+const createConditionalTokensApprovalTransaction = (operator: Hex): Transaction => ({
+  to: CTF_CONDITIONAL_TOKENS_ADDRESS,
+  data: encodeFunctionData({
+    abi: erc1155Abi,
+    functionName: 'setApprovalForAll',
+    args: [operator, true],
+  }),
+  value: '0',
+});
+
 export const splitPosition = (params: SplitMergeParams) =>
-  executeRelayerTransaction(
-    createSplitMergeTransaction('splitPosition', params),
-    'Split collateral into outcome tokens'
+  executeRelayerTransactions(
+    [
+      createCollateralApprovalTransaction(resolveCollateralAdapterAddress(params.negativeRisk), params.amount),
+      createSplitMergeTransaction('splitPosition', params),
+    ],
+    'Approve and split collateral into outcome tokens'
   );
 
 export const mergePositions = (params: SplitMergeParams) =>
-  executeRelayerTransaction(
-    createSplitMergeTransaction('mergePositions', params),
-    'Merge outcome tokens to collateral'
+  executeRelayerTransactions(
+    [
+      createConditionalTokensApprovalTransaction(resolveCollateralAdapterAddress(params.negativeRisk)),
+      createSplitMergeTransaction('mergePositions', params),
+    ],
+    'Approve and merge outcome tokens to collateral'
   );
 
 export const mergePosition = mergePositions;
@@ -196,7 +260,13 @@ export async function redeemPosition(position: Position) {
       value: '0',
     };
 
-    return executeRelayerTransaction(redeemTx, 'Redeem positions');
+    return executeRelayerTransactions(
+      [
+        createConditionalTokensApprovalTransaction(resolveCollateralAdapterAddress(position.negativeRisk)),
+        redeemTx,
+      ],
+      'Approve and redeem positions'
+    );
   } else {
     const redeemTx = {
       to: CTF_COLLATERAL_ADAPTER_ADDRESS,
@@ -213,6 +283,12 @@ export async function redeemPosition(position: Position) {
       value: '0',
     };
 
-    return executeRelayerTransaction(redeemTx, 'Redeem positions');
+    return executeRelayerTransactions(
+      [
+        createConditionalTokensApprovalTransaction(resolveCollateralAdapterAddress(position.negativeRisk)),
+        redeemTx,
+      ],
+      'Approve and redeem positions'
+    );
   }
 }

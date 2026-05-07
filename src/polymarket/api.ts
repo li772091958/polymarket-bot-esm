@@ -273,6 +273,12 @@ export const getMarketsEffect = createDataApi<MarketSearchProps, Market[]>({
   cacheExpired: 60,
 });
 
+export const getMarketBySlugEffect = createDataApi<{ slug: string }, Market>({
+  api: 'gamma-api',
+  path: '/markets/slug/:slug',
+  cacheExpired: 60,
+});
+
 export const getPositionsEffect = createDataApi<PositionSearchParams, Position[]>({
   api: 'data-api',
   path: '/positions',
@@ -285,6 +291,9 @@ export const getMarketPriceEffect = createDataApi<MarketPriceSearchParams, Marke
 
 export const getMarkets = (params: MarketSearchProps) =>
   getMarketsEffect(params).pipe(Effect.provide(DataApiLive));
+
+export const getMarketBySlug = (slug: string) =>
+  getMarketBySlugEffect({ slug }).pipe(Effect.provide(DataApiLive));
 
 export const getPositions = (params: PositionSearchParams) =>
   getPositionsEffect(params).pipe(Effect.provide(DataApiLive));

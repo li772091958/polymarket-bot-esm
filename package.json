@@ -11,6 +11,7 @@
     "gen": "tsx src/bin/index.ts",
     "cashout": "tsx src/bin/cashout.ts",
     "sell": "tsx src/bin/sell.ts",
+    "split": "tsx src/bin/split.ts",
     "check:secrets": "node scripts/check-secrets.mjs",
     "install:hooks": "node scripts/install-hooks.mjs"
   },
