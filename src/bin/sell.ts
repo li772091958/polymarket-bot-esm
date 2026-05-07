@@ -3,6 +3,11 @@ import { Effect } from 'effect';
 import { runSell } from '../sell.js';
 import RedisService from '../middleware/RedisService.js';
 
+function formatError(error: unknown) {
+  if (!(error instanceof Error)) return String(error);
+  return error.stack || error.message;
+}
+
 function parseArgs(args: string[]) {
   let keyword: string | undefined;
   let price: number | undefined;
@@ -59,8 +64,7 @@ async function main() {
   try {
     await Effect.runPromise(runSell(parsed.keyword, { price: parsed.price }));
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    console.error('Failed to sell position:', message);
+    console.error('Failed to sell position:', formatError(error));
     exitCode = 1;
   } finally {
     await RedisService.closeInstance();

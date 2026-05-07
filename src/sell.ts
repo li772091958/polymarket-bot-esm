@@ -41,6 +41,28 @@ const truncateLine = (line: string) => {
   return line.length > maxLength ? `${line.slice(0, maxLength - 3)}...` : line;
 };
 
+const roundDown = (value: number, decimals: number) =>
+  Math.floor(value * 10 ** decimals) / 10 ** decimals;
+
+const resolveSellSize = (position: Position) => {
+  const size = Number(position.size);
+  if (!Number.isFinite(size) || size <= 0) {
+    throw new SellMatchError(`Invalid position size: ${position.size}`);
+  }
+
+  const roundedSize = roundDown(size, 2);
+  if (roundedSize <= 0) {
+    throw new SellMatchError(`Position size is too small to sell after rounding: ${position.size}`);
+  }
+
+  return roundedSize;
+};
+
+const formatCause = (cause: unknown) => {
+  if (!(cause instanceof Error)) return String(cause);
+  return cause.stack || cause.message;
+};
+
 const selectPositionWithKeyboard = (positions: Position[], keyword: string) =>
   new Promise<Position>((resolve, reject) => {
     if (!process.stdin.isTTY || !process.stdout.isTTY) {
@@ -156,11 +178,12 @@ const findTargetPosition = (positions: Position[], keyword: string) =>
 const postMarketSellOrder = (position: Position) =>
   Effect.tryPromise({
     try: async () => {
+      const size = resolveSellSize(position);
       const marketInfo = await cbc.getClobMarketInfo(position.conditionId);
       const marketPrice = await cbc.calculateMarketPrice(
         position.asset,
         Side.SELL,
-        position.size,
+        size,
         OrderType.FOK
       );
 
@@ -168,7 +191,7 @@ const postMarketSellOrder = (position: Position) =>
         {
           tokenID: position.asset,
           side: Side.SELL,
-          amount: position.size,
+          amount: size,
           orderType: OrderType.FOK,
         },
         {
@@ -182,7 +205,7 @@ const postMarketSellOrder = (position: Position) =>
     },
     catch: cause =>
       new ApiError({
-        message: cause instanceof Error ? cause.message : String(cause),
+        message: formatCause(cause),
         url: `sell:${position.asset}`,
       }),
   });
@@ -190,13 +213,14 @@ const postMarketSellOrder = (position: Position) =>
 const postLimitSellOrder = (position: Position, price: number) =>
   Effect.tryPromise({
     try: async () => {
+      const size = resolveSellSize(position);
       const marketInfo = await cbc.getClobMarketInfo(position.conditionId);
       const response = await cbc.createAndPostOrder(
         {
           tokenID: position.asset,
           side: Side.SELL,
           price,
-          size: position.size,
+          size,
         },
         {
           tickSize: String(marketInfo.mts) as TickSize,
@@ -209,7 +233,7 @@ const postLimitSellOrder = (position: Position, price: number) =>
     },
     catch: cause =>
       new ApiError({
-        message: cause instanceof Error ? cause.message : String(cause),
+        message: formatCause(cause),
         url: `limit-sell:${position.asset}`,
       }),
   });
