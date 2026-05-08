@@ -18,3 +18,4 @@ ecosystem.config.js
 .VSCodeCounter
 temp
 dist
+out

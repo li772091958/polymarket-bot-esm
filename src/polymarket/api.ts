@@ -4,15 +4,18 @@ import { Wallet } from '@ethersproject/wallet';
 import type { AxiosResponse } from 'axios';
 import { Context, Data, Effect, Layer, Schedule } from 'effect';
 import RedisService from '../middleware/RedisService.js';
-import logger from '../middleware/logger.js';
 import axiosInstance from '../middleware/axios.js';
 import {
+  ActivitySearchParams,
+  LeaderboardSearchParams,
   Market,
   MarketPrice,
   MarketPriceSearchParams,
   MarketSearchProps,
   Position,
   PositionSearchParams,
+  Trade,
+  TraderLeaderboardEntry,
 } from '../types.js';
 
 const builderCode = process.env.POLY_BUILDER_CODE;
@@ -197,17 +200,10 @@ export function createDataApi<TParams = any, TResponse = any>({
 
       if (cacheExpired > 0) {
         const cached = yield* redis.get<TResponse>(key).pipe(
-          Effect.tapError(error =>
-            logger.error('Failed to read cache', {
-              key,
-              message: error.message,
-            })
-          ),
           Effect.catchAll(() => Effect.succeed(null))
         );
 
         if (cached !== null) {
-          yield* logger.info('Cache hit', { key });
           return cached;
         }
       }
@@ -218,12 +214,6 @@ export function createDataApi<TParams = any, TResponse = any>({
 
       if (cacheExpired > 0) {
         yield* redis.set(key, data, cacheExpired).pipe(
-          Effect.tapError(error =>
-            logger.error('Failed to write cache', {
-              key,
-              message: error.message,
-            })
-          ),
           Effect.ignore
         );
       }
@@ -248,12 +238,21 @@ const HttpClientLive = Layer.succeed(HttpClient, {
   get: <T>(url: string) =>
     Effect.tryPromise({
       try: () => axiosInstance.get<T>(url),
-      catch: (cause: any) =>
-        new ApiError({
-          message: cause?.message || 'HTTP request failed',
+      catch: (cause: any) => {
+        const responseMessage =
+          typeof cause?.response?.data === 'string'
+            ? cause.response.data
+            : cause?.response?.data?.error || cause?.response?.data?.message;
+        const message = responseMessage
+          ? `${cause?.message || 'HTTP request failed'}: ${responseMessage}`
+          : cause?.message || 'HTTP request failed';
+
+        return new ApiError({
+          message,
           status: cause?.response?.status,
           url,
-        }),
+        });
+      },
     }),
 });
 
@@ -284,6 +283,21 @@ export const getPositionsEffect = createDataApi<PositionSearchParams, Position[]
   path: '/positions',
 });
 
+export const getActivityEffect = createDataApi<ActivitySearchParams, Trade[]>({
+  api: 'data-api',
+  path: '/activity',
+  cacheExpired: 3 * 24 * 60 * 60,
+});
+
+export const getLeaderboardEffect = createDataApi<
+  LeaderboardSearchParams,
+  TraderLeaderboardEntry[]
+>({
+  api: 'data-api',
+  path: '/v1/leaderboard',
+  cacheExpired: 60 * 60,
+});
+
 export const getMarketPriceEffect = createDataApi<MarketPriceSearchParams, MarketPrice>({
   api: 'clob',
   path: '/price',
@@ -297,6 +311,12 @@ export const getMarketBySlug = (slug: string) =>
 
 export const getPositions = (params: PositionSearchParams) =>
   getPositionsEffect(params).pipe(Effect.provide(DataApiLive));
+
+export const getActivity = (params: ActivitySearchParams) =>
+  getActivityEffect(params).pipe(Effect.provide(DataApiLive));
+
+export const getLeaderboard = (params: LeaderboardSearchParams) =>
+  getLeaderboardEffect(params).pipe(Effect.provide(DataApiLive));
 
 export const getMarketPrice = (params: MarketPriceSearchParams) =>
   getMarketPriceEffect(params).pipe(Effect.provide(DataApiLive));

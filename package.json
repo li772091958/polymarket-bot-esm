@@ -8,6 +8,7 @@
     "build": "tsc",
     "start": "node dist/index.js",
     "test": "tsx src/test.ts",
+    "activity": "tsx scripts/activity.ts",
     "gen": "tsx src/bin/index.ts",
     "cashout": "tsx src/bin/cashout.ts",
     "sell": "tsx src/bin/sell.ts",
