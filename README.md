@@ -130,6 +130,8 @@ pm2 stop polymarket-copy-trade
 | `npm run merge -- -s <slug> <amount>` | 按 market slug merge outcome token 回 collateral |
 | `npm run merge -- -c <conditionId> <amount>` | 按 conditionId merge outcome token 回 collateral |
 | `npm run market -- --asset btc --interval 5m` | 快速检索最近一个 crypto up/down 高频市场，支持 `btc/eth/sol/xrp` 与 `5m/15m` |
+| `npm run sync:market-constants` | 初始化/刷新标签、世界杯球队和夺冠市场常量 |
+| `npm run sync:worldcup-games` | 初始化/刷新 Redis 中的世界杯赛程与比赛市场索引 |
 | `npm run activity` | 分析 Sports 周榜钱包最近 7 天 BUY 表现，输出收益率靠前的钱包 |
 | `npm run agent -- "<自然语言指令>"` | 使用项目本地 Polymarket Operator skill 的自然语言入口查询市场、查看仓位、生成下单/赎回/拆分/合并计划 |
 | `npm run check:secrets` | 扫描 staged 文件中的疑似密钥 |
@@ -137,7 +139,19 @@ pm2 stop polymarket-copy-trade
 
 ### 自然语言操作入口
 
-本项目包含一个仅限仓库内使用的 Codex skill：`.codex/skills/polymarket-operator`。它会优先调用本项目代码，不会污染全局 skills。
+本项目包含一个仅限仓库内使用的 Codex skill：`.codex/skills/polymarket-operator`。它会优先调用本项目代码，不会污染全局 skills。适合用自然语言完成这些场景：
+
+- 查询市场和价格：例如世界杯某队最近一场比赛、某两队对阵、夺冠概率，或 BTC/ETH 最近 5 分钟涨跌市场。
+- 查看账户：查询当前仓位、盈亏、可赎回或可合并的持仓。
+- 交易操作：先解析市场、金额、市价/限价和价格；信息完整后可通过 `--execute --yes` 下单、卖出、拆分、合并或赎回。
+- 世界杯快捷匹配：会优先使用本地常量和 Redis 赛程索引，展示时包含球队中文名和英文名。
+
+首次使用或缓存过期时，先初始化/刷新索引：
+
+```bash
+npm run sync:market-constants
+npm run sync:worldcup-games
+```
 
 常用示例：
 
@@ -366,6 +380,8 @@ pm2 stop polymarket-copy-trade
 | `npm run sell <asset-or-title> [-p price]` | Match a position by token or title and sell it; omit `-p` for market sell, pass it for limit sell |
 | `npm run split -- -s <slug> <amount>` | Split outcome tokens by market slug |
 | `npm run split -- -c <conditionId> <amount>` | Split outcome tokens by conditionId |
+| `npm run sync:market-constants` | Initialize or refresh tag, World Cup team, and winner-market constants |
+| `npm run sync:worldcup-games` | Initialize or refresh the Redis World Cup game and market index |
 | `npm run activity` | Analyze recent Sports leaderboard BUY performance and export top wallets |
 | `npm run check:secrets` | Scan staged files for likely secrets |
 | `npm run install:hooks` | Install the pre-commit secret scan hook |
