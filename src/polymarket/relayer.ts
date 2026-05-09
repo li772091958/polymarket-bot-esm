@@ -4,10 +4,13 @@ import { polygon } from 'viem/chains';
 import { BuilderConfig } from '@polymarket/builder-signing-sdk';
 import {
   RelayClient,
+  type RelayerTransaction,
   RelayerTransactionState,
   RelayerTxType,
+  type RelayerTransactionResponse,
   type Transaction,
 } from '@polymarket/builder-relayer-client';
+import type { AxiosInstance, AxiosProxyConfig } from 'axios';
 import 'dotenv/config';
 
 import { Position } from '../types.js';
@@ -99,6 +102,38 @@ export type SplitMergeParams = {
 const parseCollateralAmount = (amount: number | string | bigint) =>
   typeof amount === 'bigint' ? amount : parseUnits(String(amount), 6);
 
+const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+const isEnabled = (value: string | undefined) =>
+  value !== undefined && !['0', 'false', 'no', 'off'].includes(value.toLowerCase());
+
+const resolveProxyConfig = (): AxiosProxyConfig | undefined => {
+  if (!isEnabled(process.env.ENABLE_AGENT)) return undefined;
+  if (!process.env.AGENT_HOST || !process.env.AGENT_PORT) return undefined;
+
+  return {
+    protocol: process.env.AGENT_PROTOCOL || 'http',
+    host: process.env.AGENT_HOST,
+    port: Number(process.env.AGENT_PORT),
+  };
+};
+
+const configureRelayerHttpProxy = (client: RelayClient) => {
+  const proxy = resolveProxyConfig();
+  if (!proxy) return;
+
+  const httpClient = client as unknown as {
+    httpClient?: {
+      instance?: AxiosInstance;
+    };
+  };
+
+  if (httpClient.httpClient?.instance) {
+    httpClient.httpClient.instance.defaults.proxy = proxy;
+    httpClient.httpClient.instance.defaults.timeout = 30_000;
+  }
+};
+
 const createRelayerClient = () => {
   const account = privateKeyToAccount(process.env.PRIVATE_KEY as Hex);
   const wallet = createWalletClient({
@@ -115,19 +150,87 @@ const createRelayerClient = () => {
     },
   });
 
-  return new RelayClient(
+  const client = new RelayClient(
     'https://relayer-v2.polymarket.com/',
     137,
     wallet,
     builderConfig,
     RelayerTxType.PROXY
   );
+
+  configureRelayerHttpProxy(client);
+
+  return client;
+};
+
+const isTransientRelayerPollError = (error: unknown) => {
+  const message = error instanceof Error ? error.message : String(error);
+
+  return (
+    message.includes('"status":502') ||
+    message.includes('Bad Gateway') ||
+    message.includes('connection error') ||
+    message.includes('ECONNRESET') ||
+    message.includes('ETIMEDOUT') ||
+    message.includes('timeout')
+  );
+};
+
+const waitForRelayerTransaction = async (
+  response: RelayerTransactionResponse,
+  maxPolls = 120,
+  pollIntervalMs = 2_000
+): Promise<RelayerTransaction | undefined> => {
+  console.log(
+    `Waiting for transaction ${response.transactionID} matching states: ${RelayerTransactionState.STATE_MINED},${RelayerTransactionState.STATE_CONFIRMED}...`
+  );
+
+  let latest: RelayerTransaction | undefined;
+  let transientErrors = 0;
+
+  for (let pollCount = 0; pollCount < maxPolls; pollCount += 1) {
+    try {
+      const [transaction] = await response.getTransaction();
+
+      if (transaction) {
+        latest = transaction;
+
+        if (
+          transaction.state === RelayerTransactionState.STATE_MINED ||
+          transaction.state === RelayerTransactionState.STATE_CONFIRMED
+        ) {
+          return transaction;
+        }
+
+        if (
+          transaction.state === RelayerTransactionState.STATE_FAILED ||
+          transaction.state === RelayerTransactionState.STATE_INVALID
+        ) {
+          return transaction;
+        }
+      }
+    } catch (error) {
+      if (!isTransientRelayerPollError(error)) {
+        throw error;
+      }
+
+      transientErrors += 1;
+      const message = error instanceof Error ? error.message : String(error);
+      console.warn(
+        `Transient relayer poll error (${transientErrors}/${maxPolls}): ${message}`
+      );
+    }
+
+    await sleep(pollIntervalMs);
+  }
+
+  return latest;
 };
 
 const executeRelayerTransactions = async (txs: Transaction[], description: string) => {
   const client = createRelayerClient();
   const response = await client.execute(txs, description);
-  const result = await response.wait();
+  const result = await waitForRelayerTransaction(response);
 
   if (!result) {
     const [latest] = await response.getTransaction().catch(() => []);

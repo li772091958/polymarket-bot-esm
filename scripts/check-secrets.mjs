@@ -16,6 +16,9 @@ const ENV_SECRET_ASSIGNMENT_RE =
 const OBJECT_SECRET_ASSIGNMENT_RE =
   /\b(?:secret|token|apiKey|api_key|privateKey|private_key|passphrase|password|mnemonic|seed)\b\s*:\s*["'`]([^"'`]{8,})["'`]/i;
 
+const PUBLIC_HEX_ID_KEY_RE =
+  /["'`]?(?:conditionId|questionID|negRiskMarketID|negRiskRequestID|marketId|marketID|txHash|transactionHash|hash)["'`]?\s*[:=]\s*["'`]0x[a-fA-F0-9]{64}["'`]/;
+
 const RULES = [
   {
     name: 'private key block',
@@ -40,6 +43,7 @@ const RULES = [
   {
     name: 'ethereum private key',
     pattern: /\b0x[a-fA-F0-9]{64}\b/,
+    allowLine: line => PUBLIC_HEX_ID_KEY_RE.test(line),
   },
 ];
 
@@ -85,7 +89,7 @@ const scanLine = (file, line, lineNumber) => {
   }
 
   for (const rule of RULES) {
-    if (rule.pattern.test(line)) {
+    if (rule.pattern.test(line) && !rule.allowLine?.(line)) {
       findings.push({
         file,
         lineNumber,

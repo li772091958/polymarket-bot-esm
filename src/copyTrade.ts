@@ -92,8 +92,8 @@ const STRATEGY: StrategyConfig[] = [
     address: '0x9b1e0334569aa1768a07705a859686aad58e82c9',
     nickname: 'FullPicks1',
     amount: (pos: Position) => {
-      let result = parseFloat((pos.initialValue / 4000).toFixed(2));
-      result = Math.min(10, Math.max(1, result));
+      let result = parseFloat((pos.initialValue / 2000).toFixed(2));
+      result = Math.min(20, Math.max(1, result));
       return result;
     },
   },

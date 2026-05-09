@@ -13,6 +13,8 @@ class SellMatchError extends Error {
 
 export type SellOptions = {
   price?: number;
+  size?: number;
+  ratio?: number;
 };
 
 const normalize = (value: string) => value.trim().toLowerCase();
@@ -44,15 +46,34 @@ const truncateLine = (line: string) => {
 const roundDown = (value: number, decimals: number) =>
   Math.floor(value * 10 ** decimals) / 10 ** decimals;
 
-const resolveSellSize = (position: Position) => {
+const resolveSellSize = (position: Position, options: SellOptions = {}) => {
   const size = Number(position.size);
   if (!Number.isFinite(size) || size <= 0) {
     throw new SellMatchError(`Invalid position size: ${position.size}`);
   }
 
-  const roundedSize = roundDown(size, 2);
+  if (options.size !== undefined && options.ratio !== undefined) {
+    throw new SellMatchError('Cannot specify both size and ratio');
+  }
+
+  const rawSellSize =
+    options.size !== undefined
+      ? options.size
+      : options.ratio !== undefined
+        ? size * options.ratio
+        : size;
+
+  if (!Number.isFinite(rawSellSize) || rawSellSize <= 0) {
+    throw new SellMatchError(`Invalid sell size: ${rawSellSize}`);
+  }
+
+  if (rawSellSize > size) {
+    throw new SellMatchError(`Sell size exceeds position size: ${rawSellSize} > ${size}`);
+  }
+
+  const roundedSize = roundDown(rawSellSize, 2);
   if (roundedSize <= 0) {
-    throw new SellMatchError(`Position size is too small to sell after rounding: ${position.size}`);
+    throw new SellMatchError(`Sell size is too small after rounding: ${rawSellSize}`);
   }
 
   return roundedSize;
@@ -175,10 +196,10 @@ const findTargetPosition = (positions: Position[], keyword: string) =>
     catch: cause => (cause instanceof Error ? cause : new Error(String(cause))),
   });
 
-const postMarketSellOrder = (position: Position) =>
+const postMarketSellOrder = (position: Position, options: SellOptions = {}) =>
   Effect.tryPromise({
     try: async () => {
-      const size = resolveSellSize(position);
+      const size = resolveSellSize(position, options);
       const marketInfo = await cbc.getClobMarketInfo(position.conditionId);
       const marketPrice = await cbc.calculateMarketPrice(
         position.asset,
@@ -210,10 +231,10 @@ const postMarketSellOrder = (position: Position) =>
       }),
   });
 
-const postLimitSellOrder = (position: Position, price: number) =>
+const postLimitSellOrder = (position: Position, price: number, options: SellOptions = {}) =>
   Effect.tryPromise({
     try: async () => {
-      const size = resolveSellSize(position);
+      const size = resolveSellSize(position, options);
       const marketInfo = await cbc.getClobMarketInfo(position.conditionId);
       const response = await cbc.createAndPostOrder(
         {
@@ -251,7 +272,7 @@ export const runSell = (keyword: string, options: SellOptions = {}) =>
     });
 
     if (options.price === undefined) {
-      const { marketPrice, response } = yield* postMarketSellOrder(position);
+      const { marketPrice, response } = yield* postMarketSellOrder(position, options);
 
       yield* Effect.sync(() => {
         console.log('Market sell order posted:');
@@ -265,7 +286,7 @@ export const runSell = (keyword: string, options: SellOptions = {}) =>
       return { position, marketPrice, response };
     }
 
-    const { price, response } = yield* postLimitSellOrder(position, options.price);
+    const { price, response } = yield* postLimitSellOrder(position, options.price, options);
 
     yield* Effect.sync(() => {
       console.log('Limit sell order posted:');

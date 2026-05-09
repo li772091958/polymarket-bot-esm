@@ -24,6 +24,19 @@ export type MarketSearchProps = {
   include_tag?: boolean;
   game_id?: string;
 };
+
+export type EventSearchProps = {
+  offset?: number;
+  limit?: number;
+  order?: string;
+  ascending?: boolean;
+  active?: boolean;
+  closed?: boolean;
+  archived?: boolean;
+  tag_id?: number;
+  slug?: string;
+  series_slug?: string;
+};
 export type Coin = 'BTC' | 'ETH' | 'SOL' | 'XRP';
 
 export type Market = {
@@ -77,6 +90,30 @@ export type Market = {
   tags: { id: string; label: string }[];
   gameStartTime?: string;
   events: any[];
+};
+
+export type GammaEvent = {
+  id: string;
+  ticker: string;
+  slug: string;
+  title: string;
+  description: string;
+  active: boolean;
+  closed: boolean;
+  archived: boolean;
+  restricted: boolean;
+  startDate: string;
+  endDate: string;
+  eventDate?: string;
+  startTime?: string;
+  seriesSlug?: string;
+  gameId?: number;
+  liquidity?: number;
+  volume?: number;
+  tags?: { id: string; label: string; slug?: string }[];
+  series?: { id: string; ticker: string; slug: string; title: string }[];
+  teams?: { name: string; abbreviation?: string }[];
+  markets?: Market[];
 };
 export interface ParsedMarket extends Market {
   up: string;

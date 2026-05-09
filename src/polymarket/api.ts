@@ -7,6 +7,8 @@ import RedisService from '../middleware/RedisService.js';
 import axiosInstance from '../middleware/axios.js';
 import {
   ActivitySearchParams,
+  EventSearchProps,
+  GammaEvent,
   LeaderboardSearchParams,
   Market,
   MarketPrice,
@@ -272,6 +274,12 @@ export const getMarketsEffect = createDataApi<MarketSearchProps, Market[]>({
   cacheExpired: 60,
 });
 
+export const getEventsEffect = createDataApi<EventSearchProps, GammaEvent[]>({
+  api: 'gamma-api',
+  path: '/events',
+  cacheExpired: 60,
+});
+
 export const getMarketBySlugEffect = createDataApi<{ slug: string }, Market>({
   api: 'gamma-api',
   path: '/markets/slug/:slug',
@@ -305,6 +313,9 @@ export const getMarketPriceEffect = createDataApi<MarketPriceSearchParams, Marke
 
 export const getMarkets = (params: MarketSearchProps) =>
   getMarketsEffect(params).pipe(Effect.provide(DataApiLive));
+
+export const getEvents = (params: EventSearchProps) =>
+  getEventsEffect(params).pipe(Effect.provide(DataApiLive));
 
 export const getMarketBySlug = (slug: string) =>
   getMarketBySlugEffect({ slug }).pipe(Effect.provide(DataApiLive));

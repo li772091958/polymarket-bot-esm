@@ -1,0 +1,3 @@
+display_name: Polymarket Operator
+short_description: Operate project Polymarket tooling safely.
+default_prompt: Use natural language to query Polymarket markets, inspect positions, prepare orders, sell, split, merge, redeem, or fast-resolve crypto up/down markets through this project.

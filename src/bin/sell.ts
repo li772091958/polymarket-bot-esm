@@ -11,6 +11,8 @@ function formatError(error: unknown) {
 function parseArgs(args: string[]) {
   let keyword: string | undefined;
   let price: number | undefined;
+  let size: number | undefined;
+  let ratio: number | undefined;
 
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
@@ -31,6 +33,38 @@ function parseArgs(args: string[]) {
       continue;
     }
 
+    if (arg === '--size') {
+      const rawSize = args[index + 1];
+      if (!rawSize) {
+        throw new Error('Missing size after --size');
+      }
+
+      const parsedSize = Number(rawSize);
+      if (!Number.isFinite(parsedSize) || parsedSize <= 0) {
+        throw new Error(`Invalid size: ${rawSize}`);
+      }
+
+      size = parsedSize;
+      index += 1;
+      continue;
+    }
+
+    if (arg === '--ratio') {
+      const rawRatio = args[index + 1];
+      if (!rawRatio) {
+        throw new Error('Missing ratio after --ratio');
+      }
+
+      const parsedRatio = Number(rawRatio);
+      if (!Number.isFinite(parsedRatio) || parsedRatio <= 0 || parsedRatio > 1) {
+        throw new Error(`Invalid ratio: ${rawRatio}`);
+      }
+
+      ratio = parsedRatio;
+      index += 1;
+      continue;
+    }
+
     if (arg.startsWith('-')) {
       throw new Error(`Unknown option: ${arg}`);
     }
@@ -46,7 +80,11 @@ function parseArgs(args: string[]) {
     throw new Error('Missing asset-or-title');
   }
 
-  return { keyword, price };
+  if (size !== undefined && ratio !== undefined) {
+    throw new Error('Cannot specify both --size and --ratio');
+  }
+
+  return { keyword, price, size, ratio };
 }
 
 async function main() {
@@ -62,7 +100,9 @@ async function main() {
   }
 
   try {
-    await Effect.runPromise(runSell(parsed.keyword, { price: parsed.price }));
+    await Effect.runPromise(
+      runSell(parsed.keyword, { price: parsed.price, size: parsed.size, ratio: parsed.ratio })
+    );
   } catch (error) {
     console.error('Failed to sell position:', formatError(error));
     exitCode = 1;

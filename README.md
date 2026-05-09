@@ -127,9 +127,34 @@ pm2 stop polymarket-copy-trade
 | `npm run sell <asset-or-title> [-p price]` | 按 token 或标题匹配持仓并卖出；不传 `-p` 为市价卖出，传入则挂限价单 |
 | `npm run split -- -s <slug> <amount>` | 按 market slug split outcome token |
 | `npm run split -- -c <conditionId> <amount>` | 按 conditionId split outcome token |
+| `npm run merge -- -s <slug> <amount>` | 按 market slug merge outcome token 回 collateral |
+| `npm run merge -- -c <conditionId> <amount>` | 按 conditionId merge outcome token 回 collateral |
+| `npm run market -- --asset btc --interval 5m` | 快速检索最近一个 crypto up/down 高频市场，支持 `btc/eth/sol/xrp` 与 `5m/15m` |
 | `npm run activity` | 分析 Sports 周榜钱包最近 7 天 BUY 表现，输出收益率靠前的钱包 |
+| `npm run agent -- "<自然语言指令>"` | 使用项目本地 Polymarket Operator skill 的自然语言入口查询市场、查看仓位、生成下单/赎回/拆分/合并计划 |
 | `npm run check:secrets` | 扫描 staged 文件中的疑似密钥 |
 | `npm run install:hooks` | 安装 pre-commit 密钥扫描 hook |
+
+### 自然语言操作入口
+
+本项目包含一个仅限仓库内使用的 Codex skill：`.codex/skills/polymarket-operator`。它会优先调用本项目代码，不会污染全局 skills。
+
+常用示例：
+
+```bash
+npm run agent -- "查询世界杯 德国vs英国 最近一场比赛的赔率"
+npm run market -- "BTC 最近一次 5分钟 涨跌市场"
+npm run agent -- "看一下我现在的仓位"
+npm run agent -- "我买三千万德国赢"
+npm run agent -- "德国赢这个仓位全部市价卖出"
+npm run agent -- "赎回德国赢"
+```
+
+默认模式只查询或输出待确认计划。任何真实下单、卖出、拆分、合并、赎回都必须在确认目标、数量、订单类型和价格后显式执行：
+
+```bash
+npm run agent -- --execute --yes "<已确认的自然语言指令>"
+```
 
 ### Sports 周榜活动分析
 
