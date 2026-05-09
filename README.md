@@ -1,5 +1,9 @@
 # Polymarket Copy Trade Bot
 
+## TL;DR
+
+![一图读懂 Polymarket Copy Trade Bot](assets/project-one-pager.svg)
+
 Languages:
 
 - [中文版](#中文版)
@@ -14,10 +18,13 @@ Languages:
 - 定时扫描目标钱包持仓，当前默认每 1 分钟执行一轮。
 - 支持按持仓价值、均价、现价等条件过滤目标仓位。
 - 支持固定额度或按目标仓位动态计算跟单额度。
-- 每轮执行前都会查询自己的最新仓位，根据剩余额度决定是否建仓或加仓。
-- 如果检测到某个资产上轮自己持有、本轮已经没有，视为手动清仓，短期内不再买入该资产。
+- 每轮执行前查询自己的最新仓位，根据剩余额度决定是否建仓或加仓；成交会通过用户 WebSocket 实时确认并推送。
+- 手动清仓或成交卖出的资产会短期记忆，避免刚卖出又被策略买回。
+- 支持高价持仓自动挂单退出、已结算持仓 redeem、手动市价/限价卖出。
+- 支持通过 relayer 执行 split / merge / redeem，并处理负风险市场。
+- 支持 Clash 代理健康检查和自动切换节点。
 - 支持 dry run 模拟交易，不真实下单。
-- 支持成功成交后通过 Server 酱推送订单详情和返回结果。
+- 支持提交前密钥扫描，降低误提交 `.env`、私钥、token 的风险。
 - 支持 PM2 运行编译后的 `dist/index.js`。
 
 ### 技术栈
@@ -34,14 +41,22 @@ Languages:
 ```text
 src/
   copyTrade.ts              跟单策略与主循环
+  cashout.ts                高价退出和已结算 redeem
+  sell.ts                   手动卖出工具
+  wsInstance.ts             Polymarket WebSocket 封装
   index.ts                  程序入口
   polymarket/api.ts         Polymarket API 与 CLOB Client
+  polymarket/relayer.ts     Relayer split / merge / redeem
   middleware/
     axios.ts                Axios 实例
+    clashManager.ts         Clash 代理健康检查
     logger.ts               日志模块
     notify.ts               Server 酱推送
     RedisService.ts         Redis 封装
   types.ts                  类型定义
+scripts/
+  activity.ts               Sports 周榜钱包活动分析脚本
+out/                        分析脚本输出目录
 ecosystem.config.cjs        PM2 配置
 .env.exmple                 环境变量示例
 ```
@@ -101,6 +116,36 @@ pm2 restart polymarket-copy-trade
 pm2 stop polymarket-copy-trade
 ```
 
+### 常用脚本
+
+| 命令 | 说明 |
+| --- | --- |
+| `npm run dev` | 开发模式启动跟单主循环 |
+| `npm run build` | 编译 `src` 到 `dist` |
+| `npm run start` | 运行编译后的主程序 |
+| `npm run cashout` | 执行一次高价退出 / redeem 检查 |
+| `npm run sell <asset-or-title> [-p price]` | 按 token 或标题匹配持仓并卖出；不传 `-p` 为市价卖出，传入则挂限价单 |
+| `npm run split -- -s <slug> <amount>` | 按 market slug split outcome token |
+| `npm run split -- -c <conditionId> <amount>` | 按 conditionId split outcome token |
+| `npm run activity` | 分析 Sports 周榜钱包最近 7 天 BUY 表现，输出收益率靠前的钱包 |
+| `npm run check:secrets` | 扫描 staged 文件中的疑似密钥 |
+| `npm run install:hooks` | 安装 pre-commit 密钥扫描 hook |
+
+### Sports 周榜活动分析
+
+`npm run activity` 会读取 Sports 周榜钱包，统计最近 7 天符合条件的 BUY 交易，并按估算收益率输出前 50 个地址到 `out/sports-activity-week.csv`。脚本使用 Gamma `outcomePrices` 估算已结算/当前价格，控制台只保留合格用户的进度行和 HTTP 错误信息。
+
+输出字段为 `address, marketCount, cost, pnl, pnlRate`。可选环境变量：
+
+| 变量 | 默认值 | 说明 |
+| --- | --- | --- |
+| `ACTIVITY_LEADERBOARD_USERS` | `500` | 从 Sports 周榜读取的候选钱包数量 |
+| `ACTIVITY_LEADERBOARD_PAGE_SIZE` | `50` | 排行榜分页大小 |
+| `ACTIVITY_PAGE_SIZE` | `1000` | Activity 分页大小 |
+| `ACTIVITY_MAX_ACTIVITY_OFFSET` | `3000` | Activity 最大 offset，超过 `3000` 会自动限制为 `3000` |
+| `ACTIVITY_MARKET_BATCH_SIZE` | `40` | 每批通过 Gamma 查询价格的 token 数 |
+| `ACTIVITY_OUTPUT_LIMIT` | `50` | CSV 输出地址数量 |
+
 ### 配置文件说明
 
 `.env` 不会被 Git 跟踪，请只在本地或服务器上保存真实值。
@@ -116,10 +161,26 @@ pm2 stop polymarket-copy-trade
 | `CLOB_SECRET` | CLOB API secret |
 | `CLOB_PASS_PHRASE` | CLOB API passphrase |
 | `POLY_BUILDER_CODE` | 可选，builder code |
+| `BUILD_API_KEY` | Relayer builder API key |
+| `BUILD_SECRET` | Relayer builder secret |
+| `BUILD_PASS_PHRASE` | Relayer builder passphrase |
+| `RELAYER_API_KEY` | Relayer API key，保留配置 |
+| `RELAYER_ADDRESS` | Relayer 地址，保留配置 |
 | `ENABLE_AGENT` | 是否启用代理配置 |
 | `AGENT_PROTOCOL` | 代理协议，例如 `http` |
 | `AGENT_HOST` | 代理地址 |
 | `AGENT_PORT` | 代理端口 |
+| `POLYMARKET_WS_URL` | 可选，自定义 Polymarket WebSocket 地址 |
+| `ENABLE_CLASH_MANAGER` | 是否启用 Clash 代理健康检查 |
+| `CLASH_API_URL` | Clash 控制 API 地址 |
+| `CLASH_SECRET` | Clash 控制 API secret |
+| `CLASH_GROUP` | Clash 代理组名称 |
+| `CLASH_NODE_KEYWORD` | 自动选择节点时的名称关键词 |
+| `CLASH_CHECK_INTERVAL_MS` | Clash 检查间隔 |
+| `CLASH_HEALTHY_DELAY_MS` | 当前节点健康延迟阈值 |
+| `CLASH_TARGET_DELAY_MS` | 自动选择节点的目标延迟 |
+| `CLASH_DELAY_TEST_URL` | Clash 延迟测试 URL |
+| `CLASH_DELAY_TIMEOUT_MS` | Clash 延迟测试超时时间 |
 | `SERVER_CHAN_KEYS` | Server 酱 SendKey，多个 key 用英文逗号分隔 |
 | `DRY_RUN` | 设置为 `1`、`true`、`yes` 或 `on` 时只模拟交易，不真实下单 |
 
@@ -143,7 +204,10 @@ pm2 stop polymarket-copy-trade
 - 每轮策略执行前会先查询自己的仓位；如果查询失败，本轮策略会跳过，不会继续下单。
 - 数据 API 的 502 错误会自动重试，重试后仍失败会记录日志并等待下一轮。
 - 手动清仓的资产会进入内存黑名单，默认保留 2 天，避免清仓后又被策略买回。
-- 真实下单成功后才会发送推送；推送失败只记录日志，不影响主流程。
+- 用户 WebSocket 会自动重连；长时间重连失败后进入冷却再继续尝试。
+- Cashout redeem 失败会短期记忆，避免反复请求同一个失败的 redeem。
+- 真实成交确认后才会发送推送；推送失败只记录日志，不影响主流程。
+- 可安装 pre-commit hook，在提交前阻止 `.env`、私钥、API key 等敏感信息进入仓库。
 
 ### 日志
 
@@ -168,10 +232,13 @@ A copy-trading bot built on top of the Polymarket CLOB API. It periodically read
 - Periodically scans target wallet positions. The default cycle interval is 1 minute.
 - Filters target positions by position value, average price, current price, and custom rules.
 - Supports fixed copy amount or dynamic amount calculation based on each target position.
-- Fetches your latest positions before every strategy cycle and decides whether to open or scale in based on remaining allocation.
-- Treats a position that existed in the previous cycle but disappeared in the current cycle as a manual close, and temporarily prevents buying it again.
+- Fetches your latest positions before every cycle, calculates remaining allocation, and confirms fills through the user WebSocket channel.
+- Remembers manually closed or sold assets for a short period to avoid buying them back immediately.
+- Supports high-price cashout orders, resolved-position redeem, and manual market/limit selling.
+- Supports relayer-based split / merge / redeem flows, including negative-risk markets.
+- Supports Clash proxy health checks and automatic node switching.
 - Supports dry run mode for simulation without placing real orders.
-- Sends order details and CLOB responses through ServerChan after successful real fills.
+- Blocks likely secrets from commits through an optional pre-commit scan.
 - Supports running compiled `dist/index.js` with PM2.
 
 ### Tech Stack
@@ -188,14 +255,22 @@ A copy-trading bot built on top of the Polymarket CLOB API. It periodically read
 ```text
 src/
   copyTrade.ts              Copy-trading strategy and main loop
+  cashout.ts                High-price cashout and resolved-position redeem
+  sell.ts                   Manual sell helper
+  wsInstance.ts             Polymarket WebSocket wrapper
   index.ts                  Application entry point
   polymarket/api.ts         Polymarket API and CLOB Client
+  polymarket/relayer.ts     Relayer split / merge / redeem helpers
   middleware/
     axios.ts                Axios instance
+    clashManager.ts         Clash proxy health checker
     logger.ts               Logger
     notify.ts               ServerChan notification
     RedisService.ts         Redis wrapper
   types.ts                  Type definitions
+scripts/
+  activity.ts               Sports leaderboard wallet activity analyzer
+out/                        Analyzer output directory
 ecosystem.config.cjs        PM2 configuration
 .env.exmple                 Environment variable example
 ```
@@ -255,6 +330,36 @@ pm2 restart polymarket-copy-trade
 pm2 stop polymarket-copy-trade
 ```
 
+### Common Scripts
+
+| Command | Description |
+| --- | --- |
+| `npm run dev` | Start the copy-trading loop in development mode |
+| `npm run build` | Compile `src` to `dist` |
+| `npm run start` | Run the compiled main program |
+| `npm run cashout` | Run one high-price cashout / redeem check |
+| `npm run sell <asset-or-title> [-p price]` | Match a position by token or title and sell it; omit `-p` for market sell, pass it for limit sell |
+| `npm run split -- -s <slug> <amount>` | Split outcome tokens by market slug |
+| `npm run split -- -c <conditionId> <amount>` | Split outcome tokens by conditionId |
+| `npm run activity` | Analyze recent Sports leaderboard BUY performance and export top wallets |
+| `npm run check:secrets` | Scan staged files for likely secrets |
+| `npm run install:hooks` | Install the pre-commit secret scan hook |
+
+### Sports Activity Analyzer
+
+`npm run activity` reads Sports leaderboard wallets, evaluates qualifying BUY activity from the last 7 days, and writes the top 50 wallets by estimated ROI to `out/sports-activity-week.csv`. It uses Gamma `outcomePrices` instead of CLOB `/price`, so it works better for historical Sports markets that may already be resolved.
+
+The CSV fields are `address, marketCount, cost, pnl, pnlRate`. Optional environment variables:
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `ACTIVITY_LEADERBOARD_USERS` | `500` | Candidate wallet count from the Sports weekly leaderboard |
+| `ACTIVITY_LEADERBOARD_PAGE_SIZE` | `50` | Leaderboard page size |
+| `ACTIVITY_PAGE_SIZE` | `1000` | Activity page size |
+| `ACTIVITY_MAX_ACTIVITY_OFFSET` | `3000` | Maximum activity offset; values above `3000` are capped to `3000` |
+| `ACTIVITY_MARKET_BATCH_SIZE` | `40` | Token batch size for Gamma price lookups |
+| `ACTIVITY_OUTPUT_LIMIT` | `50` | Number of wallets written to the CSV |
+
 ### Environment Variables
 
 `.env` is ignored by Git. Keep real secrets only on your local machine or server.
@@ -270,10 +375,26 @@ pm2 stop polymarket-copy-trade
 | `CLOB_SECRET` | CLOB API secret |
 | `CLOB_PASS_PHRASE` | CLOB API passphrase |
 | `POLY_BUILDER_CODE` | Optional builder code |
+| `BUILD_API_KEY` | Relayer builder API key |
+| `BUILD_SECRET` | Relayer builder secret |
+| `BUILD_PASS_PHRASE` | Relayer builder passphrase |
+| `RELAYER_API_KEY` | Reserved relayer API key |
+| `RELAYER_ADDRESS` | Reserved relayer address |
 | `ENABLE_AGENT` | Whether to enable proxy settings |
 | `AGENT_PROTOCOL` | Proxy protocol, for example `http` |
 | `AGENT_HOST` | Proxy host |
 | `AGENT_PORT` | Proxy port |
+| `POLYMARKET_WS_URL` | Optional custom Polymarket WebSocket URL |
+| `ENABLE_CLASH_MANAGER` | Whether to enable Clash proxy health checks |
+| `CLASH_API_URL` | Clash control API URL |
+| `CLASH_SECRET` | Clash control API secret |
+| `CLASH_GROUP` | Clash proxy group name |
+| `CLASH_NODE_KEYWORD` | Node-name keyword used for automatic selection |
+| `CLASH_CHECK_INTERVAL_MS` | Clash health check interval |
+| `CLASH_HEALTHY_DELAY_MS` | Current-node healthy latency threshold |
+| `CLASH_TARGET_DELAY_MS` | Target latency for selected nodes |
+| `CLASH_DELAY_TEST_URL` | Clash latency test URL |
+| `CLASH_DELAY_TIMEOUT_MS` | Clash latency test timeout |
 | `SERVER_CHAN_KEYS` | ServerChan SendKeys, separated by commas |
 | `DRY_RUN` | Set to `1`, `true`, `yes`, or `on` to simulate without placing real orders |
 
@@ -297,7 +418,10 @@ The order amount is calculated as `amount - current initialValue of your own pos
 - The bot fetches your own positions before every strategy cycle. If that request fails, the whole cycle is skipped and no orders are placed.
 - Data API 502 errors are retried automatically. If retries still fail, the error is logged and the bot waits for the next cycle.
 - Manually closed assets are kept in an in-memory blocklist for 2 days by default, preventing the bot from buying them back too soon.
-- Notifications are sent only after real successful orders. Notification failures are logged and do not stop the trading loop.
+- The user WebSocket automatically reconnects; after prolonged failures it enters a cooldown and then keeps trying.
+- Cashout redeem failures are remembered temporarily to avoid repeatedly submitting the same failing redeem.
+- Notifications are sent only after real confirmed fills. Notification failures are logged and do not stop the trading loop.
+- The optional pre-commit hook blocks `.env`, private keys, API keys, and other likely secrets before they enter the repository.
 
 ### Logs
 
