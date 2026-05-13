@@ -27,6 +27,8 @@ const MIN_TRADE_USDC = 10;
 const MAX_BUY_PRICE = 0.96;
 const MIN_MARKETS = 30;
 const MAX_MARKETS = 120;
+const MIN_PNL_RATE = 0.25;
+const MIN_SUCCESS_RATE = 0.65;
 const OUTPUT_LIMIT = envNumber('ACTIVITY_OUTPUT_LIMIT', 50);
 
 type WalletResult = {
@@ -35,6 +37,9 @@ type WalletResult = {
   cost: number;
   pnl: number;
   pnlRate: number;
+  success: number;
+  failed: number;
+  successRate: number;
 };
 
 type AssetPosition = {
@@ -331,6 +336,8 @@ async function analyzeUser(user: string, index: number, total: number, start: nu
 
   const pnl = currentValue - cost;
   const pnlRate = pnl / cost;
+  const resolvedCount = success + failed;
+  const successRate = resolvedCount > 0 ? success / resolvedCount : 0;
   renderProgress(
     formatProgressLine({
       index,
@@ -347,12 +354,17 @@ async function analyzeUser(user: string, index: number, total: number, start: nu
   );
   process.stdout.write('\n');
 
+  if (pnlRate <= MIN_PNL_RATE || successRate <= MIN_SUCCESS_RATE) return;
+
   return {
     address: user,
     marketCount,
     cost,
     pnl,
     pnlRate,
+    success,
+    failed,
+    successRate,
   };
 }
 
@@ -365,7 +377,16 @@ function csvEscape(value: string | number) {
 async function writeCsv(rows: WalletResult[]) {
   const outDir = path.join(process.cwd(), 'out');
   const outFile = path.join(outDir, 'sports-activity-week.csv');
-  const header = ['address', 'marketCount', 'cost', 'pnl', 'pnlRate'];
+  const header = [
+    'address',
+    'marketCount',
+    'cost',
+    'pnl',
+    'pnlRate',
+    'success',
+    'failed',
+    'successRate',
+  ];
   const lines = rows.map(row =>
     [
       row.address,
@@ -373,6 +394,9 @@ async function writeCsv(rows: WalletResult[]) {
       row.cost.toFixed(2),
       row.pnl.toFixed(2),
       (row.pnlRate * 100).toFixed(2) + '%',
+      row.success,
+      row.failed,
+      (row.successRate * 100).toFixed(2) + '%',
     ]
       .map(csvEscape)
       .join(',')

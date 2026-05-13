@@ -14,7 +14,7 @@ export type WorldCupTeamMarketConstant = {
   tagIds: number[];
 };
 
-export const GENERATED_AT = "2026-05-09T07:22:20.478Z";
+export const GENERATED_AT = "2026-05-09T16:16:59.789Z";
 
 export const POLYMARKET_TAGS: PolymarketTagConstant[] = [
   {

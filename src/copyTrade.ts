@@ -97,6 +97,12 @@ const STRATEGY: StrategyConfig[] = [
       return result;
     },
   },
+  {
+    enable: false,
+    address: '0xa3745a5088c766a1695a4fbaaea4bbde29f69709',
+    nickname: 'Scyros',
+    amount: 1,
+  },
 ];
 
 const getStrategyName = (strategy: StrategyConfig) => strategy.nickname || strategy.address;
