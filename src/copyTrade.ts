@@ -22,6 +22,7 @@ interface StrategyConfig {
    */
   amount?: number | ((position: Position) => number);
   dryRun?: boolean;
+  opposite?: boolean;
 }
 
 interface CopyStrategyNameCache {
@@ -81,19 +82,19 @@ const DEFAULT_STRATEGY_AMOUNT = (pos: Position) => {
 // 跟单策略，每个聪明钱都不一样
 const STRATEGY: StrategyConfig[] = [
   {
-    enable: true,
+    enable: false,
     address: '0x183f8b17cfb09c9115d068b2da3033b54f4c85e3',
     nickname: 'BetsAusmAudimax',
-    // amount: 1,
-    // dryRun: true,
+    amount: 1,
+    opposite: true,
   },
   {
     enable: true,
     address: '0x9b1e0334569aa1768a07705a859686aad58e82c9',
     nickname: 'FullPicks1',
     amount: (pos: Position) => {
-      let result = parseFloat((pos.initialValue / 2000).toFixed(2));
-      result = Math.min(20, Math.max(1, result));
+      let result = parseFloat((pos.initialValue / 1800).toFixed(2));
+      result = Math.min(30, Math.max(1, result));
       return result;
     },
   },
@@ -136,9 +137,29 @@ const pruneCopyStrategyNames = (currentAssets: Set<string>, now = Date.now()) =>
   }
 };
 
-const resolveWorstPrice = (position: Position) => {
-  const rawPrice = position.curPrice + DEFAULT_MARKET_ORDER_SLIPPAGE;
+const resolveWorstPrice = (marketPrice: number) => {
+  const rawPrice = marketPrice + DEFAULT_MARKET_ORDER_SLIPPAGE;
   return Math.min(0.99, Math.max(0.01, Number(rawPrice.toFixed(3))));
+};
+
+const resolveCopyPosition = (strategy: StrategyConfig, position: Position) => {
+  if (!strategy.opposite) return Effect.succeed(position);
+
+  if (!position.oppositeAsset) {
+    return Effect.fail(
+      new ApiError({
+        message: 'Missing opposite asset for reverse copy-trade',
+        url: `opposite-asset:${position.asset}`,
+      })
+    );
+  }
+
+  return Effect.succeed({
+    ...position,
+    asset: position.oppositeAsset,
+    outcome: position.oppositeOutcome || `Opposite of ${position.outcome}`,
+    curPrice: Number((1 - position.curPrice).toFixed(4)),
+  });
 };
 
 const pruneSoldAssets = (now = Date.now()) => {
@@ -204,15 +225,12 @@ const fetchMarketBuyPrice = (position: Position) =>
     })
   );
 
-const shouldBuyAtMarketPrice = (position: Position) =>
-  fetchMarketBuyPrice(position).pipe(
-    Effect.map(
-      marketPrice =>
-        marketPrice >= MIN_ALLOWED_MARKET_BUY_PRICE && marketPrice <= MAX_ALLOWED_MARKET_BUY_PRICE
-    )
-  );
-
-const postMarketBuyOrder = (strategy: StrategyConfig, position: Position, amount: number) =>
+const postMarketBuyOrder = (
+  strategy: StrategyConfig,
+  position: Position,
+  amount: number,
+  marketPrice: number
+) =>
   DRY_RUN || strategy.dryRun
     ? logger.info(`${getStrategyName(strategy)} 模拟买进: `, {
         strategy: getStrategyName(strategy),
@@ -220,6 +238,7 @@ const postMarketBuyOrder = (strategy: StrategyConfig, position: Position, amount
         outcome: position.outcome,
         tokenId: position.asset,
         amount,
+        marketPrice,
       })
     : Effect.tryPromise({
         try: async () => {
@@ -228,7 +247,7 @@ const postMarketBuyOrder = (strategy: StrategyConfig, position: Position, amount
             tokenID: position.asset,
             side: Side.BUY,
             amount,
-            price: resolveWorstPrice(position),
+            price: resolveWorstPrice(marketPrice),
             userUSDCBalance: amount,
           };
 
@@ -275,11 +294,15 @@ const syncMyPositionsBeforeRun = Effect.gen(function* () {
   return positions;
 });
 
-const resolveRemainingAmount = (strategy: StrategyConfig, position: Position) => {
-  const configuredAmount = resolveOrderAmount(strategy, position);
+const resolveRemainingAmount = (
+  strategy: StrategyConfig,
+  sourcePosition: Position,
+  copyPosition: Position
+) => {
+  const configuredAmount = resolveOrderAmount(strategy, sourcePosition);
   const filledAmount = Math.max(
-    myPosMap.get(position.asset)?.initialValue ?? 0,
-    confirmedBoughtValueMap.get(position.asset) ?? 0
+    myPosMap.get(copyPosition.asset)?.initialValue ?? 0,
+    confirmedBoughtValueMap.get(copyPosition.asset) ?? 0
   );
   let remainingAmount = Number((configuredAmount - filledAmount).toFixed(2));
 
@@ -297,21 +320,25 @@ const resolveRemainingAmount = (strategy: StrategyConfig, position: Position) =>
 
 const processPosition = (strategy: StrategyConfig, position: Position) =>
   Effect.gen(function* () {
-    if (hasSoldAsset(position.asset)) return;
-    if (isExcludedCopyBuyAsset(position.asset)) return;
+    const copyPosition = yield* resolveCopyPosition(strategy, position);
+
+    if (hasSoldAsset(copyPosition.asset)) return;
+    if (isExcludedCopyBuyAsset(copyPosition.asset)) return;
 
     const configuredAmount = resolveOrderAmount(strategy, position);
     if (configuredAmount <= 0) return;
 
-    const remainingAmount = resolveRemainingAmount(strategy, position);
+    const remainingAmount = resolveRemainingAmount(strategy, position, copyPosition);
 
     if (remainingAmount < MIN_MARKET_BUY_AMOUNT) return;
 
-    const shouldBuy = yield* shouldBuyAtMarketPrice(position);
-    if (!shouldBuy) return;
+    const marketPrice = yield* fetchMarketBuyPrice(copyPosition);
+    if (marketPrice < MIN_ALLOWED_MARKET_BUY_PRICE || marketPrice > MAX_ALLOWED_MARKET_BUY_PRICE) {
+      return;
+    }
 
-    rememberCopyStrategyName(position.asset, strategy);
-    yield* postMarketBuyOrder(strategy, position, remainingAmount);
+    rememberCopyStrategyName(copyPosition.asset, strategy);
+    yield* postMarketBuyOrder(strategy, copyPosition, remainingAmount, marketPrice);
   });
 
 const processPositionSafely = (strategy: StrategyConfig, position: Position) =>
@@ -341,9 +368,23 @@ const runStrategy = (strategy: StrategyConfig) =>
       user: strategy.address,
       limit: 500,
     });
-    const targetPositions = resolvePositionFilter(strategy)(allPositions);
+    const targetPositions = strategy.filter ? strategy.filter(allPositions) : allPositions;
 
     for (const position of targetPositions) {
+      if (!strategy.filter) {
+        const filterPosition =
+          strategy.opposite && position.oppositeAsset
+            ? {
+                ...position,
+                asset: position.oppositeAsset,
+                outcome: position.oppositeOutcome || `Opposite of ${position.outcome}`,
+                curPrice: Number((1 - position.curPrice).toFixed(4)),
+              }
+            : position;
+
+        if (DEFAULT_STRATEGY_FILTER([filterPosition]).length === 0) continue;
+      }
+
       yield* processPositionSafely(strategy, position);
     }
   }).pipe(Effect.catchTag('ApiError', () => Effect.void));
@@ -412,27 +453,6 @@ const startCopyTradeWsListener = Effect.sync(() => {
         );
       }
     }
-  });
-
-  wsUser.on('ws_error', error => {
-    const message = error instanceof Error ? error.message : String(error);
-    void Effect.runPromise(logger.error('WS user channel error: ', { message }));
-  });
-
-  wsUser.on('connected', () => {
-    void Effect.runPromise(logger.info('WS user channel connected'));
-  });
-
-  wsUser.on('disconnected', () => {
-    void Effect.runPromise(logger.error('WS user channel disconnected'));
-  });
-
-  wsUser.on('reconnecting', info => {
-    void Effect.runPromise(logger.info('WS user channel reconnecting: ', info));
-  });
-
-  wsUser.on('reconnect_cooldown', info => {
-    void Effect.runPromise(logger.error('WS user channel reconnect cooldown: ', info));
   });
 
   wsUser.run();

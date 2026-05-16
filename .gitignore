@@ -19,3 +19,4 @@ ecosystem.config.js
 temp
 dist
 out
+web

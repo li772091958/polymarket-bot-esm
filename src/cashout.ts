@@ -9,7 +9,7 @@ const LOOP_INTERVAL = '15 minutes';
 const CASHOUT_PRICE_THRESHOLD = 0.98;
 const CASHOUT_SELL_PRICE = 0.999;
 const MIN_CASHOUT_SELL_SIZE = 5;
-const MIN_REDEEM_CURRENT_VALUE = -0.01;
+const MIN_REDEEM_CURRENT_VALUE = 0;
 const REDEEM_FAILURE_RETENTION_MS = 6 * 60 * 60 * 1000;
 
 const redeemFailureMap = new Map<string, number>();
@@ -39,6 +39,14 @@ const hasRecentRedeemFailure = (position: Position, now = Date.now()) => {
 const markRedeemFailure = (position: Position, now = Date.now()) => {
   redeemFailureMap.set(getRedeemKey(position), now);
 };
+
+const isTransientRedeemError = (message: string) =>
+  message.includes('"status":502') ||
+  message.includes('Bad Gateway') ||
+  message.includes('request error') ||
+  message.includes('ECONNRESET') ||
+  message.includes('ETIMEDOUT') ||
+  message.includes('timeout');
 
 const redeem = (position: Position) =>
   Effect.tryPromise({
@@ -79,7 +87,7 @@ const postCashoutSellOrder = (position: Position) =>
 const processPosition = (position: Position) =>
   Effect.gen(function* () {
     if (position.redeemable) {
-      if (position.currentValue < MIN_REDEEM_CURRENT_VALUE) {
+      if (position.currentValue <= MIN_REDEEM_CURRENT_VALUE) {
         return;
       }
 
@@ -108,7 +116,12 @@ const processPosition = (position: Position) =>
   }).pipe(
     Effect.catchTag('ApiError', error => {
       if (error.url?.startsWith('redeem:')) {
-        markRedeemFailure(position);
+        const transient = isTransientRedeemError(error.message);
+
+        if (!transient) {
+          markRedeemFailure(position);
+        }
+
         return logger.error('Redeem failed: ', {
           title: position.title,
           outcome: position.outcome,
@@ -116,6 +129,7 @@ const processPosition = (position: Position) =>
           outcomeIndex: position.outcomeIndex,
           size: position.size,
           currentValue: position.currentValue,
+          transient,
           message: error.message,
         });
       }

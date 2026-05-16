@@ -99,6 +99,10 @@ export type SplitMergeParams = {
   negativeRisk?: boolean;
 };
 
+type RelayerTransactionWithError = RelayerTransaction & {
+  errorMsg?: string;
+};
+
 const parseCollateralAmount = (amount: number | string | bigint) =>
   typeof amount === 'bigint' ? amount : parseUnits(String(amount), 6);
 
@@ -233,7 +237,7 @@ const executeRelayerTransactions = async (txs: Transaction[], description: strin
   const result = await waitForRelayerTransaction(response);
 
   if (!result) {
-    const [latest] = await response.getTransaction().catch(() => []);
+    const [latest] = await response.getTransaction().catch(() => []) as RelayerTransactionWithError[];
     const state = latest?.state || 'UNKNOWN';
     const transactionHash = latest?.transactionHash || response.transactionHash || '';
 
@@ -243,6 +247,7 @@ const executeRelayerTransactions = async (txs: Transaction[], description: strin
         `transactionID=${response.transactionID}`,
         `state=${state}`,
         `transactionHash=${transactionHash || 'N/A'}`,
+        latest?.errorMsg ? `errorMsg=${latest.errorMsg}` : '',
       ].join(', ')
     );
   }
@@ -251,12 +256,15 @@ const executeRelayerTransactions = async (txs: Transaction[], description: strin
     result.state === RelayerTransactionState.STATE_FAILED ||
     result.state === RelayerTransactionState.STATE_INVALID
   ) {
+    const failedResult = result as RelayerTransactionWithError;
+
     throw new Error(
       [
         `Relayer transaction failed: ${description}`,
         `transactionID=${result.transactionID}`,
         `state=${result.state}`,
         `transactionHash=${result.transactionHash || 'N/A'}`,
+        failedResult.errorMsg ? `errorMsg=${failedResult.errorMsg}` : '',
       ].join(', ')
     );
   }

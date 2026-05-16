@@ -234,9 +234,10 @@ npm run agent -- --execute --yes "<已确认的自然语言指令>"
 - `nickname`：策略名称，用于日志和通知。
 - `filter`：目标持仓过滤函数。
 - `amount`：跟单额度，可以是固定数字，也可以是根据目标仓位动态计算的函数。
+- `opposite`：设为 `true` 时反向跟单，买入目标持仓的 `oppositeAsset`。
 - `dryRun`：策略级模拟交易开关。
 
-下单逻辑会用 `amount - 自己当前该资产 initialValue` 计算剩余额度。若剩余额度在 `0.6` 到 `1` 之间，会按 `1 USDC` 下单；若小于等于 `0.6`，则跳过。
+下单逻辑会用 `amount - 自己当前实际跟单资产 initialValue` 计算剩余额度。若剩余额度在 `0.6` 到 `1` 之间，会按 `1 USDC` 下单；若小于等于 `0.6`，则跳过。
 
 ### 风控与错误处理
 
@@ -450,9 +451,10 @@ Strategies are defined in the `STRATEGY` array in `src/copyTrade.ts`. Each strat
 - `nickname`: strategy display name used in logs and notifications.
 - `filter`: function used to filter target positions.
 - `amount`: copy amount, either a fixed number or a dynamic function based on the target position.
+- `opposite`: set to `true` to reverse-copy the position by buying its `oppositeAsset`.
 - `dryRun`: strategy-level simulation switch.
 
-The order amount is calculated as `amount - current initialValue of your own position`. If the remaining amount is between `0.6` and `1`, the bot rounds it up to `1 USDC`; if it is `0.6` or lower, the bot skips the order.
+The order amount is calculated as `amount - current initialValue of your actual copied asset`. If the remaining amount is between `0.6` and `1`, the bot rounds it up to `1 USDC`; if it is `0.6` or lower, the bot skips the order.
 
 ### Risk Control and Error Handling
 
