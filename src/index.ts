@@ -3,9 +3,10 @@ import 'dotenv/config';
 import { runCashoutLoop } from './cashout.js';
 import { runCopyTradeLoop } from './copyTrade.js';
 import { autoCheckAndSwitchProxyNode } from './middleware/clashManager.js';
+import { runDailyProfitSnapshotLoop } from './profitScheduler.js';
 
 void Effect.runPromise(
-  Effect.all([autoCheckAndSwitchProxyNode, runCopyTradeLoop, runCashoutLoop], {
+  Effect.all([autoCheckAndSwitchProxyNode, runCopyTradeLoop, runCashoutLoop, runDailyProfitSnapshotLoop], {
     concurrency: 'unbounded',
     discard: true,
   })
