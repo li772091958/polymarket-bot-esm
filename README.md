@@ -13,6 +13,8 @@ Languages:
 
 一个基于 Polymarket CLOB API 的跟单机器人。程序会定时读取目标地址的持仓，按策略过滤后，对自己的账户执行建仓或加仓，并在成功成交后通过 Server 酱推送通知。
 
+作者 X/Twitter：<https://x.com/bzzmuse>
+
 ### 主要功能
 
 - 定时扫描目标钱包持仓，当前默认每 1 分钟执行一轮。
@@ -268,6 +270,8 @@ npm run agent -- --execute --yes "<已确认的自然语言指令>"
 ## English Version
 
 A copy-trading bot built on top of the Polymarket CLOB API. It periodically reads positions from target wallets, filters them with configurable strategies, opens or scales into matching positions for your own account, and sends a ServerChan notification after a successful fill.
+
+Author X/Twitter: <https://x.com/bzzmuse>
 
 ### Features
 

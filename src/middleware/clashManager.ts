@@ -35,7 +35,9 @@ const parsePositiveNumber = (value: string | undefined, fallback: number) => {
 };
 
 const resolveConfig = (): ClashConfig | null => {
-  if (!['1', 'true', 'yes', 'on'].includes((process.env.ENABLE_CLASH_MANAGER || '').toLowerCase())) {
+  if (
+    !['1', 'true', 'yes', 'on'].includes((process.env.ENABLE_CLASH_MANAGER || '').toLowerCase())
+  ) {
     return null;
   }
 
@@ -90,15 +92,7 @@ export class ClashManager {
           name: nodeName,
         }),
       catch: toError,
-    }).pipe(
-      Effect.zipRight(
-        logger.info('切换 Clash 节点: ', {
-          group: this.config.groupName,
-          node: nodeName,
-        })
-      ),
-      Effect.asVoid
-    );
+    }).pipe(Effect.asVoid);
   }
 
   private checkLatency(nodeName: string) {
@@ -190,7 +184,9 @@ export class ClashManager {
       .pipe(
         Effect.zipRight(
           Effect.forever(
-            this.checkAndSwitchOnce().pipe(Effect.zipRight(Effect.sleep(this.config.checkIntervalMs)))
+            this.checkAndSwitchOnce().pipe(
+              Effect.zipRight(Effect.sleep(this.config.checkIntervalMs))
+            )
           )
         )
       );
@@ -199,10 +195,7 @@ export class ClashManager {
 
 export const autoCheckAndSwitchProxyNode = Effect.gen(function* () {
   const config = resolveConfig();
-  if (!config) {
-    yield* logger.info('Clash 代理健康检查未启用');
-    return;
-  }
+  if (!config) return;
 
   yield* new ClashManager(config).runLoop();
 });

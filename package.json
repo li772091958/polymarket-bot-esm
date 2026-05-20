@@ -16,6 +16,7 @@
     "split": "tsx src/bin/split.ts",
     "merge": "tsx src/bin/merge.ts",
     "profit": "tsx src/bin/profit.ts",
+    "report": "tsx scripts/copy-trade-log-report.ts",
     "market": "tsx src/bin/market.ts",
     "sync:market-constants": "tsx scripts/sync-market-constants.ts",
     "sync:worldcup-games": "tsx scripts/sync-world-cup-games.ts",
