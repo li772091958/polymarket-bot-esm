@@ -17,7 +17,7 @@ Languages:
 
 - 定时扫描目标钱包持仓，当前默认每 1 分钟执行一轮。
 - 支持按持仓价值、均价、现价等条件过滤目标仓位。
-- 支持固定额度或按目标仓位动态计算跟单额度。
+- 使用策略中的最小值、最大值和系数，按目标仓位动态计算跟单额度。
 - 每轮执行前查询自己的最新仓位，根据剩余额度决定是否建仓或加仓；成交会通过用户 WebSocket 实时确认并推送。
 - 手动清仓或成交卖出的资产会短期记忆，避免刚卖出又被策略买回。
 - 支持高价持仓自动挂单退出、已结算持仓 redeem、手动市价/限价卖出。
@@ -233,11 +233,13 @@ npm run agent -- --execute --yes "<已确认的自然语言指令>"
 - `address`：目标跟单钱包地址。
 - `nickname`：策略名称，用于日志和通知。
 - `filter`：目标持仓过滤函数。
-- `amount`：跟单额度，可以是固定数字，也可以是根据目标仓位动态计算的函数。
+- `minAmount`：单个标的最小跟单额度，必填。
+- `maxAmount`：单个标的最大跟单额度，必填。
+- `coefficient`：目标仓位换算系数，必填。例如 `1 / 1800` 表示按目标仓位 `initialValue / 1800` 计算。
 - `opposite`：设为 `true` 时反向跟单，买入目标持仓的 `oppositeAsset`。
 - `dryRun`：策略级模拟交易开关。
 
-下单逻辑会用 `amount - 自己当前实际跟单资产 initialValue` 计算剩余额度。若剩余额度在 `0.6` 到 `1` 之间，会按 `1 USDC` 下单；若小于等于 `0.6`，则跳过。
+跟单额度会按 `目标仓位 initialValue * coefficient` 计算，并限制在 `minAmount` 到 `maxAmount` 之间。下单逻辑会用 `跟单额度 - 自己当前实际跟单资产 initialValue` 计算剩余额度。若剩余额度在 `0.6` 到 `1` 之间，会按 `1 USDC` 下单；若小于等于 `0.6`，则跳过。
 
 ### 风控与错误处理
 
@@ -271,7 +273,7 @@ A copy-trading bot built on top of the Polymarket CLOB API. It periodically read
 
 - Periodically scans target wallet positions. The default cycle interval is 1 minute.
 - Filters target positions by position value, average price, current price, and custom rules.
-- Supports fixed copy amount or dynamic amount calculation based on each target position.
+- Calculates copy amount from each target position using per-strategy minimum, maximum, and coefficient settings.
 - Fetches your latest positions before every cycle, calculates remaining allocation, and confirms fills through the user WebSocket channel.
 - Remembers manually closed or sold assets for a short period to avoid buying them back immediately.
 - Supports high-price cashout orders, resolved-position redeem, and manual market/limit selling.
@@ -450,11 +452,13 @@ Strategies are defined in the `STRATEGY` array in `src/copyTrade.ts`. Each strat
 - `address`: target wallet address to follow.
 - `nickname`: strategy display name used in logs and notifications.
 - `filter`: function used to filter target positions.
-- `amount`: copy amount, either a fixed number or a dynamic function based on the target position.
+- `minAmount`: minimum copy amount per market, required.
+- `maxAmount`: maximum copy amount per market, required.
+- `coefficient`: target-position multiplier, required. For example, `1 / 1800` calculates `initialValue / 1800`.
 - `opposite`: set to `true` to reverse-copy the position by buying its `oppositeAsset`.
 - `dryRun`: strategy-level simulation switch.
 
-The order amount is calculated as `amount - current initialValue of your actual copied asset`. If the remaining amount is between `0.6` and `1`, the bot rounds it up to `1 USDC`; if it is `0.6` or lower, the bot skips the order.
+The copy amount is calculated as `target initialValue * coefficient`, clamped between `minAmount` and `maxAmount`. The order amount is calculated as `copy amount - current initialValue of your actual copied asset`. If the remaining amount is between `0.6` and `1`, the bot rounds it up to `1 USDC`; if it is `0.6` or lower, the bot skips the order.
 
 ### Risk Control and Error Handling
 

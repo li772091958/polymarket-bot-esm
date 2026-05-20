@@ -18,9 +18,11 @@ interface StrategyConfig {
    */
   filter?: (positions: Position[]) => Position[];
   /**
-   * 跟单额度(USDC)
+   * 跟单额度(USDC) = clamp(目标仓位 initialValue * coefficient, minAmount, maxAmount)
    */
-  amount?: number | ((position: Position) => number);
+  minAmount: number;
+  maxAmount: number;
+  coefficient: number;
   dryRun?: boolean;
   opposite?: boolean;
 }
@@ -31,7 +33,7 @@ interface CopyStrategyNameCache {
 }
 
 // 跟单轮询间隔，Effect.sleep 支持 human-readable duration。
-const LOOP_INTERVAL = '1 minute';
+const LOOP_INTERVAL = '30 seconds';
 // 市价买单允许多付的滑点，实际挂单价 = 当前价 + 该滑点，上限仍会被限制。
 const DEFAULT_MARKET_ORDER_SLIPPAGE = 0.03;
 // 全局模拟交易开关，开启后只打日志，不真实下单。
@@ -50,10 +52,6 @@ const MAX_ALLOWED_MARKET_BUY_PRICE = 0.92;
 const SOLD_ASSET_RETENTION_MS = 2 * 24 * 60 * 60 * 1000;
 // 已记录策略名但尚未同步成持仓的缓存保留时间，防止缓存无界增长。
 const PENDING_COPY_STRATEGY_RETENTION_MS = 30 * 60 * 1000;
-// 临时排除已结算/已赎回但目标钱包仍显示持仓的 token，避免反复尝试无效买入。
-const EXCLUDED_COPY_BUY_ASSETS = new Set([
-  '50874144013607039471889595967151844694106457173650258171240313664286862843480',
-]);
 
 let myPosMap = new Map<string, Position>();
 let prevRunMyPosMap = new Map<string, Position>();
@@ -73,48 +71,86 @@ const DEFAULT_STRATEGY_FILTER = (positions: Position[]) =>
       v.curPrice > 0.2
   );
 
-const DEFAULT_STRATEGY_AMOUNT = (pos: Position) => {
-  let result = parseFloat((pos.initialValue / 1000).toFixed(2));
-  result = Math.min(10, Math.max(1, result));
-  return result;
-};
-
 // 跟单策略，每个聪明钱都不一样
 const STRATEGY: StrategyConfig[] = [
-  {
-    enable: false,
-    address: '0x183f8b17cfb09c9115d068b2da3033b54f4c85e3',
-    nickname: 'BetsAusmAudimax',
-    amount: 1,
-    opposite: true,
-  },
   {
     enable: true,
     address: '0x9b1e0334569aa1768a07705a859686aad58e82c9',
     nickname: 'FullPicks1',
-    amount: (pos: Position) => {
-      let result = parseFloat((pos.initialValue / 1800).toFixed(2));
-      result = Math.min(30, Math.max(1, result));
-      return result;
-    },
+    minAmount: 1,
+    maxAmount: 30,
+    coefficient: 1 / 1800,
   },
   {
-    enable: false,
-    address: '0xa3745a5088c766a1695a4fbaaea4bbde29f69709',
-    nickname: 'Scyros',
-    amount: 1,
+    enable: true,
+    address: '0x08c263965a9cbec5e83ac1d6f14b9bbc957bc023',
+    nickname: 'cat3xcat3x',
+    des: 'dota 高手',
+    minAmount: 1,
+    maxAmount: 5,
+    coefficient: 1 / 1000,
+    filter: (positions: Position[]) =>
+      positions.filter(
+        v => v.avgPrice < 0.92 && v.avgPrice > 0.2 && v.curPrice < 0.92 && v.curPrice > 0.2
+      ),
   },
 ];
 
 const getStrategyName = (strategy: StrategyConfig) => strategy.nickname || strategy.address;
 
-const resolveOrderAmount = (strategy: StrategyConfig, position: Position) =>
-  typeof strategy.amount === 'function'
-    ? strategy.amount(position)
-    : (strategy.amount ?? DEFAULT_STRATEGY_AMOUNT(position));
+const assertValidAmountConfig = (strategy: StrategyConfig) => {
+  const strategyName = getStrategyName(strategy);
+  const entries = {
+    minAmount: strategy.minAmount,
+    maxAmount: strategy.maxAmount,
+    coefficient: strategy.coefficient,
+  };
+
+  for (const [key, value] of Object.entries(entries)) {
+    if (!Number.isFinite(value) || value <= 0) {
+      throw new Error(`${strategyName} strategy requires a positive finite ${key}`);
+    }
+  }
+
+  if (strategy.minAmount > strategy.maxAmount) {
+    throw new Error(`${strategyName} strategy requires minAmount <= maxAmount`);
+  }
+};
+
+const resolveOrderAmount = (strategy: StrategyConfig, position: Position) => {
+  assertValidAmountConfig(strategy);
+
+  const rawAmount = position.initialValue * strategy.coefficient;
+  const clampedAmount = Math.min(strategy.maxAmount, Math.max(strategy.minAmount, rawAmount));
+  return Number(clampedAmount.toFixed(2));
+};
 
 const resolvePositionFilter = (strategy: StrategyConfig) =>
   strategy.filter ?? DEFAULT_STRATEGY_FILTER;
+
+const toOppositePosition = (position: Position) =>
+  position.oppositeAsset
+    ? {
+        ...position,
+        asset: position.oppositeAsset,
+        outcome: position.oppositeOutcome || `Opposite of ${position.outcome}`,
+        curPrice: Number((1 - position.curPrice).toFixed(4)),
+      }
+    : undefined;
+
+const resolveFilterPosition = (strategy: StrategyConfig, position: Position) =>
+  strategy.opposite ? (toOppositePosition(position) ?? position) : position;
+
+const passesDefaultFilter = (position: Position) => DEFAULT_STRATEGY_FILTER([position]).length > 0;
+
+const getTargetPositions = (strategy: StrategyConfig, positions: Position[]) => {
+  const filteredPositions = resolvePositionFilter(strategy)(positions);
+  if (strategy.filter) return filteredPositions;
+
+  return filteredPositions.filter(position =>
+    passesDefaultFilter(resolveFilterPosition(strategy, position))
+  );
+};
 
 const rememberCopyStrategyName = (asset: string, strategy: StrategyConfig, now = Date.now()) => {
   if (!copyStrategyNameByAssetMap.has(asset)) {
@@ -145,7 +181,8 @@ const resolveWorstPrice = (marketPrice: number) => {
 const resolveCopyPosition = (strategy: StrategyConfig, position: Position) => {
   if (!strategy.opposite) return Effect.succeed(position);
 
-  if (!position.oppositeAsset) {
+  const oppositePosition = toOppositePosition(position);
+  if (!oppositePosition) {
     return Effect.fail(
       new ApiError({
         message: 'Missing opposite asset for reverse copy-trade',
@@ -154,12 +191,7 @@ const resolveCopyPosition = (strategy: StrategyConfig, position: Position) => {
     );
   }
 
-  return Effect.succeed({
-    ...position,
-    asset: position.oppositeAsset,
-    outcome: position.oppositeOutcome || `Opposite of ${position.outcome}`,
-    curPrice: Number((1 - position.curPrice).toFixed(4)),
-  });
+  return Effect.succeed(oppositePosition);
 };
 
 const pruneSoldAssets = (now = Date.now()) => {
@@ -185,8 +217,6 @@ const hasSoldAsset = (asset: string, now = Date.now()) => {
 
   return true;
 };
-
-const isExcludedCopyBuyAsset = (asset: string) => EXCLUDED_COPY_BUY_ASSETS.has(asset);
 
 const parseFiniteNumber = (value: string | number) => {
   const num = Number(value);
@@ -323,7 +353,6 @@ const processPosition = (strategy: StrategyConfig, position: Position) =>
     const copyPosition = yield* resolveCopyPosition(strategy, position);
 
     if (hasSoldAsset(copyPosition.asset)) return;
-    if (isExcludedCopyBuyAsset(copyPosition.asset)) return;
 
     const configuredAmount = resolveOrderAmount(strategy, position);
     if (configuredAmount <= 0) return;
@@ -368,23 +397,9 @@ const runStrategy = (strategy: StrategyConfig) =>
       user: strategy.address,
       limit: 500,
     });
-    const targetPositions = strategy.filter ? strategy.filter(allPositions) : allPositions;
+    const targetPositions = getTargetPositions(strategy, allPositions);
 
     for (const position of targetPositions) {
-      if (!strategy.filter) {
-        const filterPosition =
-          strategy.opposite && position.oppositeAsset
-            ? {
-                ...position,
-                asset: position.oppositeAsset,
-                outcome: position.oppositeOutcome || `Opposite of ${position.outcome}`,
-                curPrice: Number((1 - position.curPrice).toFixed(4)),
-              }
-            : position;
-
-        if (DEFAULT_STRATEGY_FILTER([filterPosition]).length === 0) continue;
-      }
-
       yield* processPositionSafely(strategy, position);
     }
   }).pipe(Effect.catchTag('ApiError', () => Effect.void));
