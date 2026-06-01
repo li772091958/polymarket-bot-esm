@@ -3,7 +3,7 @@ module.exports = {
     {
       name: 'polymarket-copy-trade',
       cwd: __dirname,
-      script: './dist/index.js',
+      script: './dist/src/index.js',
       out_file: `${__dirname}/logs/pm2/out.log`,
       error_file: `${__dirname}/logs/pm2/error.log`,
       log_file: `${__dirname}/logs/pm2/combined.log`,

@@ -9,7 +9,6 @@ const LOOP_INTERVAL = '15 minutes';
 const CASHOUT_PRICE_THRESHOLD = 0.98;
 const CASHOUT_SELL_PRICE = 0.999;
 const MIN_CASHOUT_SELL_SIZE = 5;
-const MIN_REDEEM_CURRENT_VALUE = 0;
 const REDEEM_FAILURE_RETENTION_MS = 6 * 60 * 60 * 1000;
 
 const redeemFailureMap = new Map<string, number>();
@@ -87,10 +86,6 @@ const postCashoutSellOrder = (position: Position) =>
 const processPosition = (position: Position) =>
   Effect.gen(function* () {
     if (position.redeemable) {
-      if (position.currentValue <= MIN_REDEEM_CURRENT_VALUE) {
-        return;
-      }
-
       if (hasRecentRedeemFailure(position)) {
         return;
       }

@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Polymarket 仓位面板</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <header class="topbar">
+        <div>
+          <h1>Polymarket 仓位面板</h1>
+          <p id="status">正在连接</p>
+        </div>
+        <button id="cashoutBtn" class="primary" type="button">收米</button>
+      </header>
+
+      <section class="summary" aria-label="资产总览">
+        <div class="funds">
+          <strong id="availableBalance">$--</strong>
+        </div>
+        <div class="positions-value">
+          <strong id="positionValue">$--</strong>
+        </div>
+        <div class="total-value">
+          <strong id="totalAssetValue">$--</strong>
+        </div>
+      </section>
+
+      <section class="positions" aria-label="当前仓位">
+        <div class="list-head">
+          <span>市场 / 仓位</span>
+          <span>价格</span>
+          <span>价值 / 收益</span>
+        </div>
+        <div id="positionList" class="position-list"></div>
+      </section>
+    </main>
+
+    <div id="modal" class="modal hidden" role="dialog" aria-modal="true">
+      <div class="modal-panel">
+        <h2>确认市价清仓？</h2>
+        <p id="modalText"></p>
+        <div class="modal-actions">
+          <button id="cancelSellBtn" class="ghost" type="button">取消</button>
+          <button id="confirmSellBtn" class="danger" type="button">确认清仓</button>
+        </div>
+      </div>
+    </div>
+
+    <script src="/app.js" type="module"></script>
+  </body>
+</html>

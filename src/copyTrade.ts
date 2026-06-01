@@ -74,24 +74,35 @@ const DEFAULT_STRATEGY_FILTER = (positions: Position[]) =>
 // 跟单策略，每个聪明钱都不一样
 const STRATEGY: StrategyConfig[] = [
   {
-    enable: true,
+    enable: false,
     address: '0x9b1e0334569aa1768a07705a859686aad58e82c9',
     nickname: 'FullPicks1',
     minAmount: 1,
-    maxAmount: 30,
-    coefficient: 1 / 1800,
+    maxAmount: 15,
+    coefficient: 1 / 2200,
   },
   {
     enable: true,
-    address: '0x08c263965a9cbec5e83ac1d6f14b9bbc957bc023',
-    nickname: 'cat3xcat3x',
-    des: 'dota 高手',
+    address: '0xaa075924e1dc7cff3b9fab67401126338c4d2125',
+    nickname: '0xaa07',
     minAmount: 1,
     maxAmount: 5,
     coefficient: 1 / 1000,
     filter: (positions: Position[]) =>
       positions.filter(
-        v => v.avgPrice < 0.92 && v.avgPrice > 0.2 && v.curPrice < 0.92 && v.curPrice > 0.2
+        v => v.avgPrice < 0.8 && v.avgPrice > 0.2 && v.curPrice < 0.8 && v.curPrice > 0.2
+      ),
+  },
+  {
+    enable: true,
+    address: '0xdbbbde184ab04018ce0373c0dbe4e5fd6be805a8',
+    nickname: '0xdbbb',
+    minAmount: 1,
+    maxAmount: 5,
+    coefficient: 1 / 1000,
+    filter: (positions: Position[]) =>
+      positions.filter(
+        v => v.avgPrice < 0.8 && v.avgPrice > 0.2 && v.curPrice < 0.8 && v.curPrice > 0.2
       ),
   },
 ];
