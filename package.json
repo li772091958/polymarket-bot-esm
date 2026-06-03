@@ -16,6 +16,7 @@
     "split": "tsx src/bin/split.ts",
     "merge": "tsx src/bin/merge.ts",
     "profit": "tsx src/bin/profit.ts",
+    "market-maker": "tsx src/bin/market-maker.ts",
     "report": "tsx scripts/copy-trade-log-report.ts",
     "market": "tsx src/bin/market.ts",
     "sync:market-constants": "tsx scripts/sync-market-constants.ts",

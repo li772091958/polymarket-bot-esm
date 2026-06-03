@@ -74,12 +74,13 @@ const DEFAULT_STRATEGY_FILTER = (positions: Position[]) =>
 // 跟单策略，每个聪明钱都不一样
 const STRATEGY: StrategyConfig[] = [
   {
-    enable: false,
+    enable: true,
     address: '0x9b1e0334569aa1768a07705a859686aad58e82c9',
     nickname: 'FullPicks1',
     minAmount: 1,
-    maxAmount: 15,
+    maxAmount: 1.5,
     coefficient: 1 / 2200,
+    opposite: true,
   },
   {
     enable: true,
