@@ -75,36 +75,11 @@ const DEFAULT_STRATEGY_FILTER = (positions: Position[]) =>
 const STRATEGY: StrategyConfig[] = [
   {
     enable: true,
-    address: '0x9b1e0334569aa1768a07705a859686aad58e82c9',
-    nickname: 'FullPicks1',
+    address: '0xd3b034d7bfb2473fb252d0414646d9786bac329e',
+    nickname: 'Sunshine.Smile',
     minAmount: 1,
-    maxAmount: 1.5,
-    coefficient: 1 / 2200,
-    opposite: true,
-  },
-  {
-    enable: true,
-    address: '0xaa075924e1dc7cff3b9fab67401126338c4d2125',
-    nickname: '0xaa07',
-    minAmount: 1,
-    maxAmount: 5,
+    maxAmount: 10,
     coefficient: 1 / 1000,
-    filter: (positions: Position[]) =>
-      positions.filter(
-        v => v.avgPrice < 0.8 && v.avgPrice > 0.2 && v.curPrice < 0.8 && v.curPrice > 0.2
-      ),
-  },
-  {
-    enable: true,
-    address: '0xdbbbde184ab04018ce0373c0dbe4e5fd6be805a8',
-    nickname: '0xdbbb',
-    minAmount: 1,
-    maxAmount: 5,
-    coefficient: 1 / 1000,
-    filter: (positions: Position[]) =>
-      positions.filter(
-        v => v.avgPrice < 0.8 && v.avgPrice > 0.2 && v.curPrice < 0.8 && v.curPrice > 0.2
-      ),
   },
 ];
 
