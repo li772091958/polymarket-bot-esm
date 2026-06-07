@@ -81,10 +81,7 @@ function getLivePositions() {
 
 function getSnapshot(): DashboardSnapshot {
   const livePositions = getLivePositions();
-  const positionValue = livePositions.reduce(
-    (sum, position) => sum + position.liveCurrentValue,
-    0
-  );
+  const positionValue = livePositions.reduce((sum, position) => sum + position.liveCurrentValue, 0);
 
   return {
     updatedAt: lastUpdatedAt,
@@ -134,7 +131,7 @@ async function refreshPositions() {
 
     availableBalance = parseClobUsdcAmount(balanceAllowance.balance);
     syncSubscriptions(nextPositions);
-    positions = nextPositions;
+    positions = nextPositions.filter(position => position.curPrice > 0.01);
     lastUpdatedAt = new Date().toISOString();
     broadcastSnapshot();
   })().finally(() => {
@@ -157,7 +154,12 @@ async function sellPosition(asset: string) {
   const size = toFiniteNumber(position.size);
   if (size <= 0) throw new Error(`Invalid position size: ${position.size}`);
 
-  const marketPrice = await cbc.calculateMarketPrice(position.asset, Side.SELL, size, OrderType.FOK);
+  const marketPrice = await cbc.calculateMarketPrice(
+    position.asset,
+    Side.SELL,
+    size,
+    OrderType.FOK
+  );
   const response = await cbc.createAndPostMarketOrder(
     {
       tokenID: position.asset,
@@ -262,7 +264,9 @@ function handleMarketMessage(message: unknown) {
 
   broadcast({
     type: 'prices',
-    payload: Object.fromEntries(entries.filter((entry): entry is [string, number] => entry[1] !== null)),
+    payload: Object.fromEntries(
+      entries.filter((entry): entry is [string, number] => entry[1] !== null)
+    ),
   });
   broadcastSnapshot();
 }

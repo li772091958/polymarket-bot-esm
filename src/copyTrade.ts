@@ -78,7 +78,7 @@ const STRATEGY: StrategyConfig[] = [
     address: '0xd3b034d7bfb2473fb252d0414646d9786bac329e',
     nickname: 'Sunshine.Smile',
     minAmount: 1,
-    maxAmount: 10,
+    maxAmount: 16.8,
     coefficient: 1 / 1000,
   },
 ];
