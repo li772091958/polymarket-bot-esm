@@ -81,6 +81,15 @@ const STRATEGY: StrategyConfig[] = [
     maxAmount: 16.8,
     coefficient: 1 / 1000,
   },
+
+  {
+    enable: false,
+    address: '0xba389f76b0119aed07c53c9029852664bd97e406',
+    nickname: 'joblessfinalboss',
+    minAmount: 1,
+    maxAmount: 3,
+    coefficient: 1 / 1000,
+  },
 ];
 
 const getStrategyName = (strategy: StrategyConfig) => strategy.nickname || strategy.address;

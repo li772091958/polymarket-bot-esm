@@ -27,7 +27,7 @@ const MIN_TRADE_USDC = 10;
 const MAX_BUY_PRICE = 0.96;
 const MIN_MARKETS = 20;
 const MAX_MARKETS = 100;
-const MIN_PNL_RATE = 0.2;
+const MIN_PNL_RATE = 0.3;
 const MIN_SUCCESS_RATE = 0.65;
 const OUTPUT_LIMIT = envNumber('ACTIVITY_OUTPUT_LIMIT', 50);
 
@@ -377,6 +377,7 @@ function csvEscape(value: string | number) {
 async function writeCsv(rows: WalletResult[]) {
   const outDir = path.join(process.cwd(), 'out');
   const outFile = path.join(outDir, 'sports-activity-week.csv');
+  const links = path.join(outDir, 'links.txt');
   const header = [
     'address',
     'marketCount',
@@ -404,6 +405,10 @@ async function writeCsv(rows: WalletResult[]) {
 
   await fs.mkdir(outDir, { recursive: true });
   await fs.writeFile(outFile, [header.join(','), ...lines].join('\n') + '\n');
+  await fs.writeFile(
+    links,
+    rows.map(result => `https://polymarket.com/${result.address}`).join('\n') + '\n'
+  );
   return outFile;
 }
 
