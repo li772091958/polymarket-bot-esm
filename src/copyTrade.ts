@@ -78,17 +78,33 @@ const STRATEGY: StrategyConfig[] = [
     address: '0xd3b034d7bfb2473fb252d0414646d9786bac329e',
     nickname: 'Sunshine.Smile',
     minAmount: 1,
-    maxAmount: 16.8,
+    maxAmount: 5,
     coefficient: 1 / 1000,
   },
-
   {
-    enable: false,
-    address: '0xba389f76b0119aed07c53c9029852664bd97e406',
-    nickname: 'joblessfinalboss',
+    enable: true,
+    address: '0x0979bad57d7a1403db89cbcd9c52bf43f2138d9b',
+    nickname: 'askilika',
     minAmount: 1,
-    maxAmount: 3,
-    coefficient: 1 / 1000,
+    maxAmount: 20,
+    coefficient: 1 / 500,
+  },
+  {
+    enable: true,
+    address: '0xde256da54a8d8b4429b599aca4027c542bf5c0a5',
+    nickname: '0xde256',
+    minAmount: 1,
+    maxAmount: 5,
+    coefficient: 1 / 100,
+    filter: (positions: Position[]) =>
+      positions.filter(
+        v =>
+          v.initialValue > 100 &&
+          v.avgPrice < 0.92 &&
+          v.avgPrice > 0.2 &&
+          v.curPrice < 0.92 &&
+          v.curPrice > 0.2
+      ),
   },
 ];
 

@@ -31,6 +31,11 @@ const MIN_PNL_RATE = 0.3;
 const MIN_SUCCESS_RATE = 0.65;
 const OUTPUT_LIMIT = envNumber('ACTIVITY_OUTPUT_LIMIT', 50);
 
+const blacklist = new Set([
+  '0xccf128f31a3af399c40dd9854c83b60101dd25a0',
+  '0xba389f76b0119aed07c53c9029852664bd97e406',
+]);
+
 type WalletResult = {
   address: string;
   marketCount: number;
@@ -420,7 +425,10 @@ async function main() {
   console.log(`Users: ${users.length}, window: ${start} -> ${end}`);
 
   for (let i = 0; i < users.length; i++) {
-    const result = await analyzeUser(users[i]!, i + 1, users.length, start, end);
+    const address = users[i]!;
+    if (blacklist.has(address)) continue;
+
+    const result = await analyzeUser(address, i + 1, users.length, start, end);
     if (result) results.push(result);
     await sleep((i + 1) % 50 === 0 ? 3_000 : 300);
   }
