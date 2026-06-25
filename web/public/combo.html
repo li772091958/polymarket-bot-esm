@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Polymarket 串关交易台</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body class="combo-page">
+    <main class="combo-shell">
+      <header class="combo-topbar">
+        <div>
+          <h1>世界杯串关交易台</h1>
+          <p id="comboStatus">加载当前窗口内可串关市场</p>
+        </div>
+        <a class="nav-link" href="/">仓位面板</a>
+      </header>
+
+      <section class="combo-grid">
+        <section class="events-panel" aria-label="世界杯比赛市场">
+          <div class="panel-head">
+            <strong>比赛市场</strong>
+            <span>当前时间前 2 小时至后 24 小时 · 最近 6 场</span>
+          </div>
+          <div id="eventList" class="event-list"></div>
+        </section>
+
+        <aside class="ticket-panel" aria-label="串关票据">
+          <div class="panel-head">
+            <strong>串关单</strong>
+            <span id="legCount">0/5 腿</span>
+          </div>
+          <div id="selectedLegs" class="selected-legs empty-ticket">请选择至少 2 个结果</div>
+          <label class="amount-field">
+            <span>下注金额 USDC</span>
+            <input id="amountInput" inputmode="decimal" placeholder="0.00" />
+          </label>
+          <div class="quote-box">
+            <div><span>官方报价</span><b id="quotePrice">--</b></div>
+            <div><span>预计返还</span><b id="quotePayout">--</b></div>
+          </div>
+          <div class="ticket-actions">
+            <button id="refreshQuoteBtn" class="ghost" type="button">刷新报价</button>
+            <button id="submitOrderBtn" class="primary" type="button" disabled>下单</button>
+          </div>
+        </aside>
+      </section>
+
+      <section class="combo-positions" aria-label="我的串关持仓">
+        <div class="panel-head">
+          <strong>我的串关持仓</strong>
+          <button id="refreshPositionsBtn" class="ghost compact" type="button">刷新</button>
+        </div>
+        <div id="comboPositions" class="combo-position-list"></div>
+      </section>
+    </main>
+
+    <div id="comboModal" class="modal hidden" role="dialog" aria-modal="true">
+      <div class="modal-panel combo-confirm-panel">
+        <h2>确认提交串关？</h2>
+        <div id="confirmSummary" class="confirm-summary"></div>
+        <div class="modal-actions">
+          <button id="cancelComboBtn" class="ghost" type="button">取消</button>
+          <button id="confirmComboBtn" class="primary" type="button">确认下单</button>
+        </div>
+      </div>
+    </div>
+
+    <script src="/combo.js" type="module"></script>
+  </body>
+</html>
