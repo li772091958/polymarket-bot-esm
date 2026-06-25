@@ -394,3 +394,288 @@ h1 {
     font-size: 12px;
   }
 }
+
+.nav-link {
+  color: var(--accent);
+  font-weight: 800;
+  text-decoration: none;
+}
+
+.combo-page {
+  background: #eef1e8;
+}
+
+.combo-shell {
+  width: 100%;
+  max-width: 1440px;
+  margin: 0 auto;
+  padding: 14px;
+}
+
+.combo-topbar,
+.panel-head,
+.event-head,
+.ticket-actions,
+.combo-position {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.combo-topbar {
+  padding: 4px 0 14px;
+}
+
+.combo-topbar p,
+.panel-head span,
+.event-head span,
+.event-head em,
+.selected-leg span {
+  color: var(--muted);
+  font-size: 12px;
+  font-style: normal;
+}
+
+.combo-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 360px;
+  gap: 12px;
+  align-items: start;
+}
+
+.events-panel,
+.ticket-panel,
+.combo-positions {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+}
+
+.ticket-panel {
+  position: sticky;
+  top: 12px;
+  padding: 12px;
+}
+
+.panel-head {
+  min-height: 42px;
+  padding: 0 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.event-list {
+  display: grid;
+  gap: 8px;
+  padding: 8px;
+}
+
+.event-card {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: hidden;
+  background: #fbfcf8;
+}
+
+.event-head {
+  padding: 10px;
+  border-bottom: 1px solid var(--line);
+}
+
+.event-head strong,
+.event-head span {
+  display: block;
+}
+
+.market-stack {
+  display: grid;
+}
+
+.combo-market {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 220px;
+  gap: 10px;
+  align-items: center;
+  padding: 8px 10px;
+  border-bottom: 1px solid #edf0e7;
+}
+
+.combo-market:last-child {
+  border-bottom: 0;
+}
+
+.combo-question {
+  font-size: 13px;
+  font-weight: 750;
+  line-height: 1.35;
+}
+
+.outcome-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.outcome-btn {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 32px;
+  padding: 0 8px;
+  border: 1px solid var(--line);
+  background: #f4f6ef;
+  color: var(--text);
+  font-size: 12px;
+}
+
+.outcome-btn.selected {
+  border-color: var(--accent);
+  background: #dbeeea;
+  color: var(--accent);
+}
+
+.selected-legs {
+  display: grid;
+  gap: 8px;
+  padding: 12px 0;
+}
+
+.empty-ticket {
+  padding: 24px 0;
+  color: var(--muted);
+  text-align: center;
+}
+
+.selected-leg {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  gap: 8px;
+  align-items: start;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfcf8;
+}
+
+.selected-leg button {
+  min-height: 24px;
+  padding: 0;
+  border-radius: 999px;
+  background: #e9ece3;
+  color: var(--text);
+}
+
+.selected-leg strong,
+.selected-leg span {
+  display: block;
+}
+
+.amount-field {
+  display: grid;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.amount-field input {
+  width: 100%;
+  height: 40px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0 10px;
+  color: var(--text);
+  background: #fbfcf8;
+  font: inherit;
+}
+
+.quote-box {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1px;
+  margin: 12px 0;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--line);
+}
+
+.quote-box div {
+  padding: 10px;
+  background: #fbfcf8;
+}
+
+.quote-box span,
+.quote-box b {
+  display: block;
+}
+
+.quote-box span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.quote-box b {
+  margin-top: 4px;
+  font-size: 18px;
+}
+
+.ticket-actions button {
+  flex: 1;
+}
+
+.combo-positions {
+  margin-top: 12px;
+}
+
+.compact {
+  min-height: 30px;
+  padding: 0 10px;
+  font-size: 12px;
+}
+
+.combo-position-list {
+  display: grid;
+  gap: 1px;
+  background: var(--line);
+}
+
+.combo-position {
+  padding: 10px 12px;
+  background: #ffffff;
+  font-size: 13px;
+}
+
+.combo-position strong,
+.combo-position span {
+  display: block;
+}
+
+.confirm-summary {
+  margin: 12px 0 18px;
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.confirm-summary ol {
+  max-height: 260px;
+  overflow: auto;
+  margin: 8px 0 0;
+  padding-left: 20px;
+}
+
+@media (max-width: 980px) {
+  .combo-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .ticket-panel {
+    position: static;
+  }
+}
+
+@media (max-width: 680px) {
+  .combo-market {
+    grid-template-columns: 1fr;
+  }
+}
