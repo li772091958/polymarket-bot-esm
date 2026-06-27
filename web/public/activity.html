@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Polymarket 活动流水</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <header class="topbar">
+        <div>
+          <h1>Polymarket 活动流水</h1>
+          <p id="status">正在加载</p>
+        </div>
+        <div class="topbar-actions">
+          <button id="refreshBtn" class="primary" type="button">刷新</button>
+          <a class="ghost btn-link" href="/">返回仓位</a>
+        </div>
+      </header>
+
+      <section class="filters" aria-label="过滤">
+        <label class="filter">
+          <span>类型</span>
+          <select id="typeFilter">
+            <option value="">全部</option>
+            <option value="TRADE">TRADE</option>
+            <option value="SPLIT">SPLIT</option>
+            <option value="MERGE">MERGE</option>
+            <option value="REDEEM">REDEEM</option>
+            <option value="REWARD">REWARD</option>
+            <option value="CONVERSION">CONVERSION</option>
+          </select>
+        </label>
+        <label class="filter">
+          <span>方向</span>
+          <select id="sideFilter">
+            <option value="">全部</option>
+            <option value="BUY">BUY</option>
+            <option value="SELL">SELL</option>
+          </select>
+        </label>
+      </section>
+
+      <section class="summary activity-summary" aria-label="汇总">
+        <div class="activity-count">
+          <span>已加载</span>
+          <strong id="totalCount">--</strong>
+        </div>
+        <div class="activity-buy">
+          <span>买入成交额</span>
+          <strong id="buyVolume">$--</strong>
+        </div>
+        <div class="activity-sell">
+          <span>卖出成交额</span>
+          <strong id="sellVolume">$--</strong>
+        </div>
+      </section>
+
+      <section class="activity" aria-label="活动列表">
+        <div class="activity-head">
+          <span>时间</span>
+          <span>市场 / 方向</span>
+          <span>类型</span>
+          <span>数量 / 价格</span>
+          <span>金额(USDC)</span>
+          <span>交易</span>
+        </div>
+        <div id="activityList" class="activity-list"></div>
+        <div class="load-more-wrap">
+          <button id="loadMoreBtn" class="ghost" type="button" hidden>加载更多</button>
+        </div>
+      </section>
+    </main>
+
+    <script src="/activity.js" type="module"></script>
+  </body>
+</html>

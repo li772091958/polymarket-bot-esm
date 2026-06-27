@@ -22,7 +22,10 @@
     "sync:market-constants": "tsx scripts/sync-market-constants.ts",
     "sync:worldcup-games": "tsx scripts/sync-world-cup-games.ts",
     "check:secrets": "node scripts/check-secrets.mjs",
-    "install:hooks": "node scripts/install-hooks.mjs"
+    "install:hooks": "node scripts/install-hooks.mjs",
+    "corner": "tsx scripts/corner.ts",
+    "slug": "tsx scripts/worldCupSlug.ts",
+    "buy-corner": "tsx scripts/buy-corner.ts"
   },
   "keywords": [],
   "author": "",

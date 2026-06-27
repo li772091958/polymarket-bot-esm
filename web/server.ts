@@ -5,19 +5,34 @@ import { extname, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Effect } from 'effect';
 import { runCashoutCycle } from '../src/cashout.js';
-import { ApiError, cbc, getPositions } from '../src/polymarket/api.js';
 import {
   getComboPositions,
   getWorldCupComboEvents,
   placeOfficialComboOrder,
   requestOfficialComboQuote,
 } from '../src/polymarket/combo.js';
-import type { Position } from '../src/types.js';
+import { ApiError, cbc, getActivityFresh, getPositions } from '../src/polymarket/api.js';
+import type { ActivitySearchParams, Position, Trade } from '../src/types.js';
 import { wsMarket } from '../src/wsInstance.js';
 
 const DEFAULT_PORT = 3000;
 const POSITIONS_REFRESH_MS = 60_000;
 const USDC_DECIMALS = 1_000_000;
+
+// activity 查询参数边界值，与上游 data-api 对齐。
+const ACTIVITY_DEFAULT_LIMIT = 100;
+const ACTIVITY_MAX_LIMIT = 500;
+const ACTIVITY_ALLOWED_TYPES = [
+  'TRADE',
+  'SPLIT',
+  'MERGE',
+  'REDEEM',
+  'REWARD',
+  'CONVERSION',
+] as const;
+type ActivityType = (typeof ACTIVITY_ALLOWED_TYPES)[number];
+const ACTIVITY_ALLOWED_SIDES = ['BUY', 'SELL'] as const;
+type ActivitySide = (typeof ACTIVITY_ALLOWED_SIDES)[number];
 
 type LivePosition = Position & {
   livePrice: number;
@@ -192,6 +207,60 @@ async function sellPosition(asset: string) {
   };
 }
 
+function parseActivityTypes(value: string | null): ActivityType[] | undefined {
+  if (!value) return undefined;
+  const allowed = new Set<string>(ACTIVITY_ALLOWED_TYPES);
+  const types = value
+    .split(',')
+    .map(item => item.trim().toUpperCase())
+    .filter((item): item is ActivityType => Boolean(item) && allowed.has(item));
+  return types.length > 0 ? types : undefined;
+}
+
+function parseActivitySide(value: string | null): ActivitySide | undefined {
+  if (!value) return undefined;
+  const normalized = value.trim().toUpperCase();
+  return ACTIVITY_ALLOWED_SIDES.includes(normalized as ActivitySide)
+    ? (normalized as ActivitySide)
+    : undefined;
+}
+
+async function fetchActivity(query: URLSearchParams) {
+  const user = process.env.FUNDER;
+  if (!user) throw new Error('Missing FUNDER env');
+
+  const rawLimit = Number(query.get('limit') ?? ACTIVITY_DEFAULT_LIMIT);
+  const limit =
+    Number.isFinite(rawLimit) && rawLimit > 0
+      ? Math.min(Math.floor(rawLimit), ACTIVITY_MAX_LIMIT)
+      : ACTIVITY_DEFAULT_LIMIT;
+
+  const rawOffset = Number(query.get('offset') ?? 0);
+  const offset = Number.isFinite(rawOffset) && rawOffset > 0 ? Math.floor(rawOffset) : 0;
+
+  const type = parseActivityTypes(query.get('type'));
+  const side = parseActivitySide(query.get('side'));
+
+  const params: ActivitySearchParams = {
+    user,
+    limit,
+    offset,
+    sortBy: 'TIMESTAMP',
+    sortDirection: 'DESC',
+  };
+  if (type) params.type = type;
+  if (side) params.side = side;
+
+  const items = await Effect.runPromise(getActivityFresh(params));
+  return {
+    user,
+    limit,
+    offset,
+    items: items as Trade[],
+    hasMore: items.length === limit,
+  };
+}
+
 function readAsset(record: Record<string, unknown>) {
   return typeof record.asset_id === 'string'
     ? record.asset_id
@@ -312,7 +381,6 @@ async function handleApi(request: IncomingMessage, response: ServerResponse, url
     return json(response, 200, getSnapshot());
   }
 
-
   if (request.method === 'GET' && url.pathname === '/api/combo/markets') {
     const events = await getWorldCupComboEvents();
     return json(response, 200, { events });
@@ -324,7 +392,7 @@ async function handleApi(request: IncomingMessage, response: ServerResponse, url
   }
 
   if (request.method === 'POST' && url.pathname === '/api/combo/quote') {
-    const body = await readRequestBody(request) as { legs?: unknown[]; amount?: number };
+    const body = (await readRequestBody(request)) as { legs?: unknown[]; amount?: number };
     const quote = await requestOfficialComboQuote({
       legs: (body.legs || []) as never,
       amount: Number(body.amount),
@@ -333,7 +401,11 @@ async function handleApi(request: IncomingMessage, response: ServerResponse, url
   }
 
   if (request.method === 'POST' && url.pathname === '/api/combo/order') {
-    const body = await readRequestBody(request) as { legs?: unknown[]; amount?: number; quote?: unknown };
+    const body = (await readRequestBody(request)) as {
+      legs?: unknown[];
+      amount?: number;
+      quote?: unknown;
+    };
     const result = await placeOfficialComboOrder({
       legs: (body.legs || []) as never,
       amount: Number(body.amount),
@@ -341,6 +413,11 @@ async function handleApi(request: IncomingMessage, response: ServerResponse, url
     });
     const positions = await getComboPositions().catch(() => ({ combos: [] }));
     return json(response, 200, { ok: true, result, positions });
+  }
+
+  if (request.method === 'GET' && url.pathname === '/api/activity') {
+    const result = await fetchActivity(url.searchParams);
+    return json(response, 200, result);
   }
 
   if (request.method === 'POST' && url.pathname === '/api/cashout') {
@@ -399,7 +476,8 @@ function getPublicDir() {
 
 function serveStatic(request: IncomingMessage, response: ServerResponse, url: URL) {
   const publicDir = getPublicDir();
-  const requestedPath = url.pathname === '/' ? '/index.html' : url.pathname === '/combo' ? '/combo.html' : url.pathname;
+  const requestedPath =
+    url.pathname === '/' ? '/index.html' : url.pathname === '/combo' ? '/combo.html' : url.pathname;
   const safePath = normalize(decodeURIComponent(requestedPath)).replace(/^(\.\.[/\\])+/, '');
   const filePath = join(publicDir, safePath);
 

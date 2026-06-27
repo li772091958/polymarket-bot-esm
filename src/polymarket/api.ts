@@ -297,6 +297,14 @@ export const getActivityEffect = createDataApi<ActivitySearchParams, Trade[]>({
   cacheExpired: 3 * 24 * 60 * 60,
 });
 
+// 无缓存版本，给需要实时性、分页语义的 web 端使用。
+// 不能复用 getActivityEffect：它的 3 天缓存会让分页/过滤拿到过期数据。
+export const getActivityFreshEffect = createDataApi<ActivitySearchParams, Trade[]>({
+  api: 'data-api',
+  path: '/activity',
+  cacheExpired: 0,
+});
+
 export const getLeaderboardEffect = createDataApi<
   LeaderboardSearchParams,
   TraderLeaderboardEntry[]
@@ -325,6 +333,10 @@ export const getPositions = (params: PositionSearchParams) =>
 
 export const getActivity = (params: ActivitySearchParams) =>
   getActivityEffect(params).pipe(Effect.provide(DataApiLive));
+
+// 无缓存版，用于 web 端分页/过滤查询。
+export const getActivityFresh = (params: ActivitySearchParams) =>
+  getActivityFreshEffect(params).pipe(Effect.provide(DataApiLive));
 
 export const getLeaderboard = (params: LeaderboardSearchParams) =>
   getLeaderboardEffect(params).pipe(Effect.provide(DataApiLive));

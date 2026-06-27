@@ -64,7 +64,7 @@ let copyTradeWsStarted = false;
 const DEFAULT_STRATEGY_FILTER = (positions: Position[]) =>
   positions.filter(
     v =>
-      v.initialValue > 300 &&
+      v.initialValue > 100 &&
       v.avgPrice < 0.92 &&
       v.avgPrice > 0.2 &&
       v.curPrice < 0.92 &&
@@ -74,7 +74,7 @@ const DEFAULT_STRATEGY_FILTER = (positions: Position[]) =>
 // 跟单策略，每个聪明钱都不一样
 const STRATEGY: StrategyConfig[] = [
   {
-    enable: true,
+    enable: false,
     address: '0xd3b034d7bfb2473fb252d0414646d9786bac329e',
     nickname: 'Sunshine.Smile',
     minAmount: 1,
@@ -90,21 +90,29 @@ const STRATEGY: StrategyConfig[] = [
     coefficient: 1 / 500,
   },
   {
-    enable: true,
-    address: '0xde256da54a8d8b4429b599aca4027c542bf5c0a5',
-    nickname: '0xde256',
+    enable: false,
+    address: '0x86c878cde72660ec52f5e6f0f0438b76de8fc867',
+    nickname: 'fortuneking',
     minAmount: 1,
-    maxAmount: 5,
-    coefficient: 1 / 100,
+    maxAmount: 10,
+    coefficient: 1 / 500,
     filter: (positions: Position[]) =>
       positions.filter(
         v =>
-          v.initialValue > 100 &&
-          v.avgPrice < 0.92 &&
-          v.avgPrice > 0.2 &&
-          v.curPrice < 0.92 &&
-          v.curPrice > 0.2
+          v.initialValue > 10 &&
+          v.avgPrice < 0.85 &&
+          v.avgPrice > 0.1 &&
+          v.curPrice < 0.85 &&
+          v.curPrice > 0.1
       ),
+  },
+  {
+    enable: true,
+    address: '0xc7fbd006f27cb9bfc1edd7d90d3b26dda139e5fd',
+    nickname: '0xc7fbd',
+    minAmount: 1,
+    maxAmount: 5,
+    coefficient: 1 / 1000,
   },
 ];
 
