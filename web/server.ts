@@ -6,6 +6,12 @@ import { fileURLToPath } from 'node:url';
 import { Effect } from 'effect';
 import { runCashoutCycle } from '../src/cashout.js';
 import { ApiError, cbc, getPositions } from '../src/polymarket/api.js';
+import {
+  getComboPositions,
+  getWorldCupComboEvents,
+  placeOfficialComboOrder,
+  requestOfficialComboQuote,
+} from '../src/polymarket/combo.js';
 import type { Position } from '../src/types.js';
 import { wsMarket } from '../src/wsInstance.js';
 
@@ -306,6 +312,37 @@ async function handleApi(request: IncomingMessage, response: ServerResponse, url
     return json(response, 200, getSnapshot());
   }
 
+
+  if (request.method === 'GET' && url.pathname === '/api/combo/markets') {
+    const events = await getWorldCupComboEvents();
+    return json(response, 200, { events });
+  }
+
+  if (request.method === 'GET' && url.pathname === '/api/combo/positions') {
+    const positions = await getComboPositions();
+    return json(response, 200, positions);
+  }
+
+  if (request.method === 'POST' && url.pathname === '/api/combo/quote') {
+    const body = await readRequestBody(request) as { legs?: unknown[]; amount?: number };
+    const quote = await requestOfficialComboQuote({
+      legs: (body.legs || []) as never,
+      amount: Number(body.amount),
+    });
+    return json(response, 200, { ok: true, quote });
+  }
+
+  if (request.method === 'POST' && url.pathname === '/api/combo/order') {
+    const body = await readRequestBody(request) as { legs?: unknown[]; amount?: number; quote?: unknown };
+    const result = await placeOfficialComboOrder({
+      legs: (body.legs || []) as never,
+      amount: Number(body.amount),
+      quote: body.quote,
+    });
+    const positions = await getComboPositions().catch(() => ({ combos: [] }));
+    return json(response, 200, { ok: true, result, positions });
+  }
+
   if (request.method === 'POST' && url.pathname === '/api/cashout') {
     await Effect.runPromise(runCashoutCycle);
     await refreshPositions();
@@ -362,7 +399,7 @@ function getPublicDir() {
 
 function serveStatic(request: IncomingMessage, response: ServerResponse, url: URL) {
   const publicDir = getPublicDir();
-  const requestedPath = url.pathname === '/' ? '/index.html' : url.pathname;
+  const requestedPath = url.pathname === '/' ? '/index.html' : url.pathname === '/combo' ? '/combo.html' : url.pathname;
   const safePath = normalize(decodeURIComponent(requestedPath)).replace(/^(\.\.[/\\])+/, '');
   const filePath = join(publicDir, safePath);
 
