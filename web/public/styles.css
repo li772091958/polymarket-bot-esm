@@ -708,6 +708,9 @@ h1 {
 @media (max-width: 680px) {
   .combo-market {
     grid-template-columns: 1fr;
+  }
+}
+
 /* ============ Activity 页面 ============ */
 .filters {
   display: flex;
